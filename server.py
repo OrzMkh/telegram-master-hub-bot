@@ -15,9 +15,13 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-WEB_APP_DIR = os.path.join(BASE_DIR, "web_app")
-BIKES_DB_PATH = os.path.join(BASE_DIR, "..", "telegram-bike-report-bot", "bike_reports.db")
-TASKS_DB_PATH = os.path.join(BASE_DIR, "..", "telegram-task-manager-bot", "tasks.db")
+if os.path.exists(os.path.join(BASE_DIR, "web_app", "index.html")):
+    WEB_APP_DIR = os.path.join(BASE_DIR, "web_app")
+else:
+    WEB_APP_DIR = BASE_DIR
+
+BIKES_DB_PATH = os.path.join(BASE_DIR, "bike_reports.db")
+TASKS_DB_PATH = os.path.join(BASE_DIR, "tasks.db")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8951006941:AAH2Wc2j2AH1aCvui1Bflr7puDStzHtwNNI").strip()
 MASTER_APP_PASSWORD = os.getenv("MASTER_APP_PASSWORD", "7890").strip()
 
