@@ -1051,9 +1051,20 @@ function renderTasksList() {
                         </div>
                     `;
                 } else {
+                    const isDisputed = t.rating_comment && t.rating_comment.includes("Оспаривание");
+                    const disputeHeader = isDisputed ? `
+                        <div style="font-size:12px; font-weight:700; color:#f43f5e; margin-bottom:4px; display:flex; align-items:center; justify-content:center; gap:4px;">
+                            ⚖️ <span>ОСПОРЕНО ИСПОЛНИТЕЛЕМ:</span>
+                        </div>
+                        <div style="font-size:11px; color:#e2e8f0; font-style:italic; margin-bottom:8px; padding:6px; background:rgba(244,63,94,0.15); border-radius:6px; border:1px solid rgba(244,63,94,0.3);">
+                            💬 "${t.rating_comment}"
+                        </div>
+                    ` : '';
+
                     ratingHTML = `
-                        <div style="margin-top:10px; padding:10px; background:rgba(30,41,59,0.9); border-radius:10px; border:1px solid rgba(192,132,252,0.4); text-align:center;">
-                            <div style="font-size:12px; font-weight:700; color:#c084fc; margin-bottom:8px;">⭐️ Поставьте оценку за выполнение:</div>
+                        <div style="margin-top:10px; padding:10px; background:rgba(30,41,59,0.9); border-radius:10px; border:1px solid ${isDisputed ? 'rgba(244,63,94,0.5)' : 'rgba(192,132,252,0.4)'}; text-align:center;">
+                            ${disputeHeader}
+                            <div style="font-size:12px; font-weight:700; color:#c084fc; margin-bottom:8px;">⭐️ ${isDisputed ? 'Пересмотрите оценку за выполнение:' : 'Поставьте оценку за выполнение:'}</div>
                             <div style="display:flex; justify-content:center; gap:6px;">
                                 <button class="btn-sm" onclick="rateTaskAction(${t.id}, 1, event)" style="background:rgba(244,63,94,0.2); color:#f43f5e; border:1px solid #f43f5e; flex:1; font-weight:700; cursor:pointer;">⭐ 1</button>
                                 <button class="btn-sm" onclick="rateTaskAction(${t.id}, 2, event)" style="background:rgba(245,158,11,0.2); color:#f59e0b; border:1px solid #f59e0b; flex:1; font-weight:700; cursor:pointer;">⭐ 2</button>
