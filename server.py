@@ -1090,17 +1090,40 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             logger.error(f"Failed to create task and notify: {e}")
 
     def complete_task(self, task_id: int):
-        if not os.path.exists(TASKS_DB_PATH):
-            return
-        try:
-            conn = sqlite3.connect(TASKS_DB_PATH)
-            c = conn.cursor()
-            now_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
-            c.execute("UPDATE tasks SET status = 'Done', completed_at = ? WHERE id = ?", (now_str, task_id))
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"Failed to complete task: {e}")
+        if os.path.exists(TASKS_DB_PATH):
+            try:
+                conn = sqlite3.connect(TASKS_DB_PATH)
+                c = conn.cursor()
+                now_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
+                c.execute("UPDATE tasks SET status = 'Done', completed_at = ? WHERE id = ?", (now_str, task_id))
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                logger.error(f"Failed to complete task in sqlite: {e}")
+
+        # Update status in Google Sheets & invalidate cache
+        creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+        if creds_json_env:
+            try:
+                import gspread
+                from google.oauth2.service_account import Credentials
+                scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+                s_clean = creds_json_env.strip().strip("'").strip('"')
+                info = json.loads(s_clean)
+                if isinstance(info.get("private_key"), str):
+                    info["private_key"] = info["private_key"].replace("\\n", "\n")
+                creds = Credentials.from_service_account_info(info, scopes=scopes)
+                client = gspread.authorize(creds)
+                spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
+                sheet = spreadsheet.sheet1
+                cell = sheet.find(str(task_id))
+                if cell:
+                    headers = [str(h).strip() for h in sheet.row_values(1)]
+                    stat_col = headers.index("Статус") + 1 if "Статус" in headers else 7
+                    sheet.update_cell(cell.row, stat_col, "Done")
+                TASKS_SHEETS_CACHE["timestamp"] = 0
+            except Exception as e:
+                logger.error(f"Failed to complete task in Google Sheets: {e}")
 
     def rate_task(self, task_id: int, rating: int, rating_comment: str = ""):
         if not os.path.exists(TASKS_DB_PATH):
