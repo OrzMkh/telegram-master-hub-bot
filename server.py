@@ -893,19 +893,19 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 except (ValueError, TypeError):
                     pass
 
-                if (iss == 0 and broken == 0) or not r_date:
-                    for sheet_city, rep_data in sheet_reports.items():
-                        if sheet_city in c_name_lower or c_name_lower in sheet_city:
-                            try:
-                                iss = int(rep_data["issued"])
-                            except Exception:
-                                pass
-                            try:
-                                broken = int(rep_data["broken"])
-                            except Exception:
-                                pass
-                            r_date = rep_data["report_date"]
-                            break
+                # Always prioritize live Google Sheets report data if available
+                for sheet_city, rep_data in sheet_reports.items():
+                    if sheet_city in c_name_lower or c_name_lower in sheet_city:
+                        try:
+                            iss = int(rep_data["issued"])
+                        except Exception:
+                            pass
+                        try:
+                            broken = int(rep_data["broken"])
+                        except Exception:
+                            pass
+                        r_date = rep_data["report_date"]
+                        break
 
                 pct = round((iss / tot) * 100) if tot > 0 else 0
                 pct = min(pct, 100)
