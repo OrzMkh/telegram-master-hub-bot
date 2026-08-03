@@ -770,42 +770,18 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
     def get_dashboard_data(self):
-        tot_bikes = 0
-        tot_users = 0
-        if os.path.exists(BIKES_DB_PATH):
-            try:
-                conn = sqlite3.connect(BIKES_DB_PATH)
-                conn.row_factory = sqlite3.Row
-                c = conn.cursor()
-                c.execute("SELECT SUM(total_bikes) as tot FROM cities")
-                row = c.fetchone()
-                tot_bikes = row["tot"] if row and row["tot"] else 0
+        cities_list = self.get_cities_data()
+        tot_bikes = sum(int(c.get("total_bikes") or 0) for c in cities_list)
+        tot_issued = sum(int(c.get("issued") or 0) for c in cities_list)
+        share_on_line = round((tot_issued / tot_bikes) * 100) if tot_bikes > 0 else 0
 
-                c.execute("SELECT COUNT(*) as cnt FROM users")
-                row_u = c.fetchone()
-                tot_users = row_u["cnt"] if row_u else 0
-                conn.close()
-            except Exception:
-                pass
-
-        tot_tasks = 0
-        if os.path.exists(TASKS_DB_PATH):
-            try:
-                conn_t = sqlite3.connect(TASKS_DB_PATH)
-                conn_t.row_factory = sqlite3.Row
-                ct = conn_t.cursor()
-                ct.execute("SELECT COUNT(*) as cnt FROM tasks WHERE status = 'Active'")
-                row_t = ct.fetchone()
-                tot_tasks = row_t["cnt"] if row_t else 0
-                conn_t.close()
-            except Exception:
-                pass
+        tot_tasks = len(self.get_tasks_data())
 
         return {
             "total_bikes": tot_bikes,
-            "share_on_line": 68,
+            "share_on_line": share_on_line,
             "active_tasks": tot_tasks,
-            "total_users": tot_users,
+            "total_users": len(cities_list),
         }
 
     def get_cities_data(self):
@@ -835,17 +811,69 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             raw_rows = [dict(r) for r in c.fetchall()]
             conn.close()
 
+            # Live Google Sheets fallback for bike reports
+            sheet_reports = {}
+            creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+            if creds_json_env:
+                try:
+                    import gspread
+                    from google.oauth2.service_account import Credentials
+                    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+                    s_clean = creds_json_env.strip().strip("'").strip('"')
+                    info = json.loads(s_clean)
+                    if isinstance(info.get("private_key"), str):
+                        info["private_key"] = info["private_key"].replace("\\n", "\n")
+                    creds = Credentials.from_service_account_info(info, scopes=scopes)
+                    client = gspread.authorize(creds)
+                    spreadsheet = client.open_by_key("1Oskxt5oHfO50PDn47I_7rbn4KGfEoy_JcVsn3mBIiyw")
+                    for ws in spreadsheet.worksheets():
+                        title = ws.title
+                        city_name = title.replace("Байки", "").strip() if "Байки" in title else title.strip()
+                        if not city_name:
+                            continue
+                        records = ws.get_all_records()
+                        if records:
+                            latest = records[-1]
+                            issued = latest.get("Выдано", 0) or latest.get("Выдано байков", 0) or 0
+                            broken = latest.get("Сломанные байки", 0) or latest.get("Сломанные", 0) or 0
+                            r_date = latest.get("Дата отчета", "") or latest.get("Дата", "")
+                            sheet_reports[city_name.lower()] = {
+                                "issued": issued,
+                                "broken": broken,
+                                "report_date": r_date
+                            }
+                except Exception as e:
+                    logger.error(f"Failed to fetch bike reports from Google Sheets: {e}")
+
             result = []
             for r in raw_rows:
                 tot = int(r.get("total_bikes") or 0)
+                c_name_lower = r["name"].lower()
+
+                iss = 0
+                broken = 0
+                r_date = r.get("report_date")
+
                 try:
                     iss = int(r.get("issued") or 0)
-                except (ValueError, TypeError):
-                    iss = 0
-                try:
                     broken = int(r.get("broken_bikes") or 0)
                 except (ValueError, TypeError):
-                    broken = 0
+                    pass
+
+                if (iss == 0 and broken == 0) or not r_date:
+                    for sheet_city, rep_data in sheet_reports.items():
+                        if sheet_city in c_name_lower or c_name_lower in sheet_city:
+                            try:
+                                iss = int(rep_data["issued"])
+                            except Exception:
+                                pass
+                            try:
+                                broken = int(rep_data["broken"])
+                            except Exception:
+                                pass
+                            r_date = rep_data["report_date"]
+                            break
+
                 pct = round(((iss + broken) / tot) * 100) if tot > 0 else 0
                 pct = min(pct, 100)
 
@@ -855,8 +883,8 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                     "total_bikes": tot,
                     "issued": iss,
                     "percent_online": pct,
-                    "broken_bikes": r["broken_bikes"],
-                    "report_date": r["report_date"]
+                    "broken_bikes": broken,
+                    "report_date": r_date
                 })
             return result
         except Exception as e:
