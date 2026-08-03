@@ -1630,7 +1630,88 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         except Exception as e:
             logger.error(f"Failed to delete managed bot: {e}")
 
+def init_local_master_dbs():
+    try:
+        conn = sqlite3.connect(BIKES_DB_PATH)
+        c = conn.cursor()
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS cities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                has_bike_types INTEGER DEFAULT 0,
+                total_bikes INTEGER DEFAULT 80,
+                created_at TEXT NOT NULL
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS bike_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                username TEXT,
+                city TEXT DEFAULT '',
+                report_date TEXT NOT NULL,
+                issued TEXT NOT NULL,
+                returned TEXT NOT NULL,
+                total_in_trip TEXT NOT NULL,
+                new_bikes TEXT NOT NULL,
+                old_bikes TEXT NOT NULL,
+                broken_bikes TEXT NOT NULL,
+                return_reasons TEXT NOT NULL,
+                comment TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+        default_cities = [
+            ("Ташкент", 1670, 0),
+            ("Самарканд", 200, 0),
+            ("Фергана", 80, 0),
+            ("Андижан", 50, 0),
+            ("Бухара", 30, 0),
+            ("Навои", 30, 0),
+            ("Карши", 30, 0),
+            ("Ургенч", 30, 0),
+            ("Нукус", 30, 0),
+            ("Коканд", 25, 0),
+            ("Наманган", 25, 0),
+        ]
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for c_name, c_bikes, c_types in default_cities:
+            c.execute("SELECT id FROM cities WHERE name = ?", (c_name,))
+            r = c.fetchone()
+            if r:
+                c.execute("UPDATE cities SET total_bikes = ?, has_bike_types = ? WHERE id = ?", (c_bikes, c_types, r[0]))
+            else:
+                c.execute("INSERT INTO cities (name, has_bike_types, total_bikes, created_at) VALUES (?, ?, ?, ?)", (c_name, c_types, c_bikes, now))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error init local bikes db: {e}")
+
+    try:
+        conn_t = sqlite3.connect(TASKS_DB_PATH)
+        ct = conn_t.cursor()
+        ct.execute("""
+            CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_text TEXT NOT NULL,
+                assignee TEXT,
+                author TEXT,
+                sla_deadline TEXT,
+                created_at TEXT,
+                status TEXT DEFAULT 'Active',
+                priority TEXT DEFAULT 'Medium',
+                city TEXT DEFAULT 'Ташкент',
+                rating INTEGER DEFAULT 0,
+                rating_comment TEXT
+            )
+        """)
+        conn_t.commit()
+        conn_t.close()
+    except Exception as e:
+        logger.error(f"Error init local tasks db: {e}")
+
 def run_master_server(port=8085):
+    init_local_master_dbs()
     port = int(os.getenv("PORT", str(port)))
     ThreadingHTTPServer.allow_reuse_address = True
     server = ThreadingHTTPServer(("0.0.0.0", port), MasterHubHandler)
