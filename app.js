@@ -982,6 +982,20 @@ function getSlaBadge(t) {
     }
 }
 
+function setTaskFilter(filter) {
+    window.currentTaskFilter = filter;
+    ["btnFilterTaskAll", "btnFilterTaskActive", "btnFilterTaskUnrated", "btnFilterTaskRated"].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.classList.remove("active");
+    });
+    if (filter === "all") document.getElementById("btnFilterTaskAll")?.classList.add("active");
+    if (filter === "active") document.getElementById("btnFilterTaskActive")?.classList.add("active");
+    if (filter === "unrated") document.getElementById("btnFilterTaskUnrated")?.classList.add("active");
+    if (filter === "rated") document.getElementById("btnFilterTaskRated")?.classList.add("active");
+    loadTasksData();
+}
+window.setTaskFilter = setTaskFilter;
+
 async function loadTasksData() {
     const tasksList = document.getElementById("tasksList");
 
@@ -990,14 +1004,17 @@ async function loadTasksData() {
         let tasks = await res.json();
 
         // Apply task status filtering
-        if (currentTaskFilter === "active") tasks = tasks.filter(t => t.status !== "Done");
-        if (currentTaskFilter === "done") tasks = tasks.filter(t => t.status === "Done");
+        const filter = window.currentTaskFilter || "all";
+        if (filter === "active") tasks = tasks.filter(t => t.status !== "Done");
+        if (filter === "done") tasks = tasks.filter(t => t.status === "Done");
+        if (filter === "unrated") tasks = tasks.filter(t => t.status === "Done" && (!t.rating || t.rating === 0));
+        if (filter === "rated") tasks = tasks.filter(t => t.status === "Done" && t.rating > 0);
 
         const countBadge = document.getElementById("taskCountBadge");
         if (countBadge) countBadge.textContent = `Показано: ${tasks.length}`;
 
         if (tasks.length === 0) {
-            tasksList.innerHTML = `<div class="muted-text text-center">Задач не найдено</div>`;
+            tasksList.innerHTML = `<div class="muted-text text-center" style="padding:20px; color:var(--text-muted);">Задач не найдено</div>`;
         } else {
             tasksList.innerHTML = tasks.map(t => {
                 const isDone = t.status === "Done";
@@ -1015,19 +1032,25 @@ async function loadTasksData() {
                     if (rating > 0) {
                         const starsStr = "⭐️".repeat(rating);
                         ratingHTML = `
-                            <div style="margin-top:10px; padding:8px 12px; background:rgba(192,132,252,0.15); border-radius:10px; border:1px solid var(--accent-purple); display:flex; justify-content:space-between; align-items:center;">
+                            <div style="margin-top:10px; padding:10px 14px; background:rgba(192,132,252,0.12); border-radius:10px; border:1px solid rgba(192,132,252,0.3); display:flex; justify-content:space-between; align-items:center;">
                                 <div>
-                                    <span style="font-size:12px; font-weight:700; color:var(--accent-purple);">Оценка админа: ${starsStr} (${rating}/5)</span>
-                                    ${t.rating_comment ? `<div style="font-size:11px; color:var(--text-muted); margin-top:2px;">💬 "${t.rating_comment}"</div>` : ''}
+                                    <span style="font-size:13px; font-weight:700; color:#c084fc;">⭐️ Оценка руководителя: ${starsStr} (${rating}/5)</span>
+                                    ${t.rating_comment ? `<div style="font-size:11px; color:var(--text-muted); margin-top:3px;">💬 "${t.rating_comment}"</div>` : ''}
                                 </div>
-                                <button class="btn-sm" onclick="openRateTaskModal(${t.id})" style="font-size:10px; padding:3px 8px;">✏️ Изменить</button>
                             </div>
                         `;
                     } else {
                         ratingHTML = `
-                            <button class="btn-sm btn-primary-sm" onclick="openRateTaskModal(${t.id})" style="margin-top:10px; width:100%; background:linear-gradient(135deg, #c084fc, #9333ea);">
-                                ⭐️ Оценить работу (1-5 звезд)
-                            </button>
+                            <div style="margin-top:10px; padding:10px; background:rgba(30,41,59,0.9); border-radius:10px; border:1px solid rgba(192,132,252,0.4); text-align:center;">
+                                <div style="font-size:12px; font-weight:700; color:#c084fc; margin-bottom:8px;">⭐️ Поставьте оценку за выполнение:</div>
+                                <div style="display:flex; justify-content:center; gap:6px;">
+                                    <button class="btn-sm" onclick="rateTaskAction(${t.id}, 1)" style="background:rgba(244,63,94,0.2); color:#f43f5e; border:1px solid #f43f5e; flex:1; font-weight:700;">⭐ 1</button>
+                                    <button class="btn-sm" onclick="rateTaskAction(${t.id}, 2)" style="background:rgba(245,158,11,0.2); color:#f59e0b; border:1px solid #f59e0b; flex:1; font-weight:700;">⭐ 2</button>
+                                    <button class="btn-sm" onclick="rateTaskAction(${t.id}, 3)" style="background:rgba(234,179,8,0.2); color:#eab308; border:1px solid #eab308; flex:1; font-weight:700;">⭐ 3</button>
+                                    <button class="btn-sm" onclick="rateTaskAction(${t.id}, 4)" style="background:rgba(59,130,246,0.2); color:#3b82f6; border:1px solid #3b82f6; flex:1; font-weight:700;">⭐ 4</button>
+                                    <button class="btn-sm" onclick="rateTaskAction(${t.id}, 5)" style="background:rgba(16,185,129,0.2); color:#10b981; border:1px solid #10b981; flex:1; font-weight:700;">⭐ 5</button>
+                                </div>
+                            </div>
                         `;
                     }
                 }
@@ -1073,8 +1096,22 @@ async function completeTaskAction(taskId) {
         console.error("Complete task error:", e);
     }
 }
-
 window.completeTaskAction = completeTaskAction;
+
+async function rateTaskAction(taskId, rating) {
+    try {
+        await fetch("/api/tasks/rate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ task_id: taskId, rating: rating })
+        });
+        loadTasksData();
+        updateDashboardView();
+    } catch (e) {
+        console.error("Rate task error:", e);
+    }
+}
+window.rateTaskAction = rateTaskAction;
 
 async function populateAssigneesDropdown() {
     const dropdown = document.getElementById("selectTaskAssignee");

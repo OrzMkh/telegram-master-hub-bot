@@ -1130,51 +1130,108 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 client = gspread.authorize(creds)
                 spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
                 sheet = spreadsheet.sheet1
-                cell = sheet.find(str(task_id))
-                if cell:
-                    headers = [str(h).strip() for h in sheet.row_values(1)]
+                headers = [str(h).strip() for h in sheet.row_values(1)]
+                id_col_vals = sheet.col_values(1)
+                target_row = None
+                str_id = str(task_id).strip()
+                for idx, val in enumerate(id_col_vals):
+                    if str(val).strip() == str_id:
+                        target_row = idx + 1
+                        break
+                if target_row:
                     stat_col = headers.index("Статус") + 1 if "Статус" in headers else 7
-                    sheet.update_cell(cell.row, stat_col, "Done")
+                    sheet.update_cell(target_row, stat_col, "Done")
+                TASKS_SHEETS_CACHE["timestamp"] = 0
+            except Exception as e:
+                logger.error(f"Failed to complete task in Google Sheets: {e}")
+
+    def rate_task(self, task_id: int, rating: int, rating_comment: str = ""):
+        task_text = ""
+        assignee = ""
+        if os.path.exists(TASKS_DB_PATH):
+            try:
+                conn = sqlite3.connect(TASKS_DB_PATH)
+                conn.row_factory = sqlite3.Row
+                c = conn.cursor()
+                c.execute("SELECT task_text, assignee FROM tasks WHERE id = ?", (task_id,))
+                row = c.fetchone()
+                if row:
+                    task_text = row["task_text"]
+                    assignee = row["assignee"]
+                c.execute("UPDATE tasks SET rating = ?, rating_comment = ?, is_disputed = 0 WHERE id = ?", (rating, rating_comment, task_id))
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                logger.error(f"Failed to save rating in sqlite: {e}")
+
+        # Update rating in Google Sheets
+        creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+        if creds_json_env:
+            try:
+                import gspread
+                from google.oauth2.service_account import Credentials
+                scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+                s_clean = creds_json_env.strip().strip("'").strip('"')
+                info = json.loads(s_clean)
+                if isinstance(info.get("private_key"), str):
+                    info["private_key"] = info["private_key"].replace("\\n", "\n")
+                creds = Credentials.from_service_account_info(info, scopes=scopes)
+                client = gspread.authorize(creds)
+                spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
+                sheet = spreadsheet.sheet1
+                headers = [str(h).strip() for h in sheet.row_values(1)]
+                id_col_vals = sheet.col_values(1)
+                target_row = None
+                str_id = str(task_id).strip()
+                for idx, val in enumerate(id_col_vals):
+                    if str(val).strip() == str_id:
+                        target_row = idx + 1
+                        break
+                if target_row:
+                    rat_col = headers.index("Оценка") + 1 if "Оценка" in headers else 8
+                    sheet.update_cell(target_row, rat_col, f"{rating}/5")
                     if not task_text:
-                        row_vals = sheet.row_values(cell.row)
+                        row_vals = sheet.row_values(target_row)
                         text_idx = headers.index("Текст задачи") if "Текст задачи" in headers else 1
                         ass_idx = headers.index("Исполнитель") if "Исполнитель" in headers else 2
                         task_text = row_vals[text_idx] if len(row_vals) > text_idx else ""
                         assignee = row_vals[ass_idx] if len(row_vals) > ass_idx else ""
                 TASKS_SHEETS_CACHE["timestamp"] = 0
             except Exception as e:
-                logger.error(f"Failed to complete task in Google Sheets: {e}")
+                logger.error(f"Failed to update task rating in Google Sheets: {e}")
 
-        # Send Telegram rating notification
+        # Send Telegram rating notification with Dispute button to Telegram group
         try:
             bot_token = "8666306951:AAEJ9z2F0t4I2mj2IMPE8TygL6a2k_5ob6g"
             chat_id = "-1002638798110"
+            stars_str = "⭐️" * rating
+
+            safe_task = (task_text or 'Задача').replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            safe_asgn = (assignee or 'Команда').replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
             msg_text = (
-                f"✅ <b>ЗАДАЧА #{task_id} ВЫПОЛНЕНА!</b>\n\n"
-                f"📋 <b>Описание:</b> {task_text or 'Выполнено'}\n"
-                f"👤 <b>Исполнитель:</b> {assignee or 'Команда'}\n\n"
-                f"⭐️ <b>Пожалуйста, оцените качество работы:</b>"
+                f"⭐️ <b>ОЦЕНКА ЗАДАЧИ #{task_id}</b>\n\n"
+                f"📌 <b>Задача:</b> {safe_task}\n"
+                f"👤 <b>Исполнитель:</b> {safe_asgn}\n"
+                f"👑 <b>Оценка руководителя:</b> {stars_str} ({rating}/5)\n\n"
+                f"⚖️ <i>Исполнитель может оспорить оценку, если не согласен:</i>"
             )
+
             keyboard = {
                 "inline_keyboard": [
-                    [
-                        {"text": "⭐️ 1", "callback_data": f"rate_task_{task_id}_1"},
-                        {"text": "⭐️ 2", "callback_data": f"rate_task_{task_id}_2"},
-                        {"text": "⭐️ 3", "callback_data": f"rate_task_{task_id}_3"},
-                        {"text": "⭐️ 4", "callback_data": f"rate_task_{task_id}_4"},
-                        {"text": "⭐️ 5", "callback_data": f"rate_task_{task_id}_5"}
-                    ],
                     [
                         {"text": "⚖️ Оспорить оценку", "callback_data": f"dispute_task_{task_id}"}
                     ]
                 ]
             }
+
             payload = {
                 "chat_id": chat_id,
                 "text": msg_text,
                 "parse_mode": "HTML",
                 "reply_markup": keyboard
             }
+
             req = urllib.request.Request(
                 f"https://api.telegram.org/bot{bot_token}/sendMessage",
                 data=json.dumps(payload).encode("utf-8"),
@@ -1182,83 +1239,8 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             )
             urllib.request.urlopen(req)
         except Exception as e:
-            logger.error(f"Failed to send task rating prompt to Telegram: {e}")
+            logger.error(f"Failed to send rating notification to Telegram: {e}")
 
-    def rate_task(self, task_id: int, rating: int, rating_comment: str = ""):
-        if not os.path.exists(TASKS_DB_PATH):
-            return
-        task_text = ""
-        assignee = ""
-        try:
-            # Step 1: read task data BEFORE update
-            conn = sqlite3.connect(TASKS_DB_PATH)
-            conn.row_factory = sqlite3.Row
-            c = conn.cursor()
-            c.execute("SELECT task_text, assignee FROM tasks WHERE id = ?", (task_id,))
-            row = c.fetchone()
-            if row:
-                task_text = row["task_text"]
-                assignee = row["assignee"]
-            conn.close()
-        except Exception as e:
-            logger.error(f"Failed to read task for rating: {e}")
-
-        try:
-            # Step 2: update rating
-            conn2 = sqlite3.connect(TASKS_DB_PATH)
-            c2 = conn2.cursor()
-            c2.execute("UPDATE tasks SET rating = ?, rating_comment = ?, is_disputed = 0 WHERE id = ?", (rating, rating_comment, task_id))
-            conn2.commit()
-            conn2.close()
-        except Exception as e:
-            logger.error(f"Failed to save rating: {e}")
-            return
-
-        try:
-            # Step 3: send Telegram notification
-            bot_token = "8666306951:AAEJ9z2F0t4I2mj2IMPE8TygL6a2k_5ob6g"
-            chat_id = "-1002638798110"
-            stars_str = "\u2b50" * rating
-            score_bar = ["\u2605" if i < rating else "\u2606" for i in range(5)]
-            score_display = "".join(score_bar)
-
-            # Escape HTML special chars to prevent Telegram 400 Bad Request
-            safe_task = task_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            safe_asgn = assignee.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            safe_cmt = rating_comment.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-            msg_text = (
-                f"\u2b50 <b>ОЦЕНКА ЗА ЗАДАЧУ #{task_id}</b>\n\n"
-                f"\U0001f4cc <b>Задача:</b> {safe_task}\n"
-                f"\U0001f464 <b>Исполнитель:</b> {safe_asgn}\n"
-                f"\U0001f451 <b>Оценка:</b> {stars_str} ({rating}/5)\n"
-                f"\U0001f4ca <b>Рейтинг:</b> {score_display}\n"
-            )
-            if safe_cmt:
-                msg_text += f"\U0001f4ac <b>Комментарий:</b> \u00ab{safe_cmt}\u00bb\n"
-
-            msg_text += "\n\U0001f4a1 <i>Если не согласен с оценкой \u2014 нажми кнопку ниже:</i>"
-
-            payload = {
-                "chat_id": chat_id,
-                "text": msg_text,
-                "parse_mode": "HTML",
-                "reply_markup": {
-                    "inline_keyboard": [
-                        [{"text": "\u2696\ufe0f Оспорить оценку", "callback_data": f"dispute_task_{task_id}"}]
-                    ]
-                }
-            }
-
-            req = urllib.request.Request(
-                f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-                headers={"Content-Type": "application/json; charset=utf-8"}
-            )
-            resp = urllib.request.urlopen(req)
-            logger.info(f"Rating notification sent for task #{task_id}: {resp.read().decode('utf-8')[:100]}")
-        except Exception as e:
-            logger.error(f"Failed to send rating notification: {e}")
 
     def get_tasks_dynamics(self, date_from=None, date_to=None, assignee_filter=None):
         """Return per-day task dynamics for the selected period and assignee."""
