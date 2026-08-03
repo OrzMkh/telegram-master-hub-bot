@@ -12,7 +12,12 @@ import openpyxl.styles
 import openpyxl.utils
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
+import time
+
 logger = logging.getLogger(__name__)
+
+BIKE_SHEETS_CACHE = {"timestamp": 0, "data": {}}
+TASKS_SHEETS_CACHE = {"timestamp": 0, "data": []}
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if os.path.exists(os.path.join(BASE_DIR, "web_app", "index.html")):
@@ -811,54 +816,62 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             raw_rows = [dict(r) for r in c.fetchall()]
             conn.close()
 
-            # Live Google Sheets fallback for bike reports
-            sheet_reports = {}
-            creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
-            if creds_json_env:
-                try:
-                    import gspread
-                    from google.oauth2.service_account import Credentials
-                    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-                    s_clean = creds_json_env.strip().strip("'").strip('"')
-                    info = json.loads(s_clean)
-                    if isinstance(info.get("private_key"), str):
-                        info["private_key"] = info["private_key"].replace("\\n", "\n")
-                    creds = Credentials.from_service_account_info(info, scopes=scopes)
-                    client = gspread.authorize(creds)
-                    spreadsheet = client.open_by_key("1Oskxt5oHfO50PDn47I_7rbn4KGfEoy_JcVsn3mBIiyw")
-                    for ws in spreadsheet.worksheets():
-                        title = ws.title
-                        city_name = title.replace("Байки", "").strip() if "Байки" in title else title.strip()
-                        if not city_name:
-                            continue
-                        rows = ws.get_all_values()
-                        if len(rows) > 1:
-                            headers = [str(h).strip() for h in rows[0]]
-                            latest = rows[-1]
-                            iss_idx = headers.index("Выдано") if "Выдано" in headers else 3
-                            brok_idx = headers.index("Сломанные") if "Сломанные" in headers else (headers.index("Сломанные байки") if "Сломанные байки" in headers else 8)
-                            date_idx = headers.index("Дата отчета") if "Дата отчета" in headers else (headers.index("Дата") if "Дата" in headers else 2)
+            # Live Google Sheets fallback for bike reports (with 15s in-memory cache to prevent 429 Quota Exceeded)
+            now_time = time.time()
+            if now_time - BIKE_SHEETS_CACHE["timestamp"] < 15 and BIKE_SHEETS_CACHE["data"]:
+                sheet_reports = BIKE_SHEETS_CACHE["data"]
+            else:
+                sheet_reports = {}
+                creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+                if creds_json_env:
+                    try:
+                        import gspread
+                        from google.oauth2.service_account import Credentials
+                        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+                        s_clean = creds_json_env.strip().strip("'").strip('"')
+                        info = json.loads(s_clean)
+                        if isinstance(info.get("private_key"), str):
+                            info["private_key"] = info["private_key"].replace("\\n", "\n")
+                        creds = Credentials.from_service_account_info(info, scopes=scopes)
+                        client = gspread.authorize(creds)
+                        spreadsheet = client.open_by_key("1Oskxt5oHfO50PDn47I_7rbn4KGfEoy_JcVsn3mBIiyw")
+                        for ws in spreadsheet.worksheets():
+                            title = ws.title
+                            city_name = title.replace("Байки", "").strip() if "Байки" in title else title.strip()
+                            if not city_name:
+                                continue
+                            rows = ws.get_all_values()
+                            if len(rows) > 1:
+                                headers = [str(h).strip() for h in rows[0]]
+                                latest = rows[-1]
+                                iss_idx = headers.index("Выдано") if "Выдано" in headers else 3
+                                brok_idx = headers.index("Сломанные") if "Сломанные" in headers else (headers.index("Сломанные байки") if "Сломанные байки" in headers else 8)
+                                date_idx = headers.index("Дата отчета") if "Дата отчета" in headers else (headers.index("Дата") if "Дата" in headers else 2)
 
-                            issued_val = latest[iss_idx] if len(latest) > iss_idx else "0"
-                            broken_val = latest[brok_idx] if len(latest) > brok_idx else "0"
-                            date_val = latest[date_idx] if len(latest) > date_idx else ""
+                                issued_val = latest[iss_idx] if len(latest) > iss_idx else "0"
+                                broken_val = latest[brok_idx] if len(latest) > brok_idx else "0"
+                                date_val = latest[date_idx] if len(latest) > date_idx else ""
 
-                            try:
-                                iss_num = int(issued_val)
-                            except (ValueError, TypeError):
-                                iss_num = 0
-                            try:
-                                brok_num = int(broken_val)
-                            except (ValueError, TypeError):
-                                brok_num = 0
+                                try:
+                                    iss_num = int(issued_val)
+                                except (ValueError, TypeError):
+                                    iss_num = 0
+                                try:
+                                    brok_num = int(broken_val)
+                                except (ValueError, TypeError):
+                                    brok_num = 0
 
-                            sheet_reports[city_name.lower()] = {
-                                "issued": iss_num,
-                                "broken": brok_num,
-                                "report_date": date_val
-                            }
-                except Exception as e:
-                    logger.error(f"Failed to fetch bike reports from Google Sheets: {e}")
+                                sheet_reports[city_name.lower()] = {
+                                    "issued": iss_num,
+                                    "broken": brok_num,
+                                    "report_date": date_val
+                                }
+                        BIKE_SHEETS_CACHE["data"] = sheet_reports
+                        BIKE_SHEETS_CACHE["timestamp"] = now_time
+                    except Exception as e:
+                        logger.error(f"Failed to fetch bike reports from Google Sheets: {e}")
+                        if BIKE_SHEETS_CACHE["data"]:
+                            sheet_reports = BIKE_SHEETS_CACHE["data"]
 
             result = []
             for r in raw_rows:
@@ -971,7 +984,11 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 logger.error(f"Failed to get tasks from sqlite: {e}")
 
-        # Fallback: Read live tasks from Google Sheets
+        # Fallback: Read live tasks from Google Sheets (with 15s cache to prevent 429 Quota Exceeded)
+        now_time = time.time()
+        if now_time - TASKS_SHEETS_CACHE["timestamp"] < 15 and TASKS_SHEETS_CACHE["data"]:
+            return TASKS_SHEETS_CACHE["data"]
+
         creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
         if creds_json_env:
             try:
@@ -985,6 +1002,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 creds = Credentials.from_service_account_info(info, scopes=scopes)
                 client = gspread.authorize(creds)
                 spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
+                sheet = spreadsheet.sheet1
                 rows = sheet.get_all_values()
                 tasks = []
                 if len(rows) > 1:
@@ -1011,9 +1029,14 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                             "rating": 0,
                             "rating_comment": ""
                         })
-                return tasks[::-1]
+                res_tasks = tasks[::-1]
+                TASKS_SHEETS_CACHE["data"] = res_tasks
+                TASKS_SHEETS_CACHE["timestamp"] = now_time
+                return res_tasks
             except Exception as e:
                 logger.error(f"Failed to fetch tasks from Google Sheets: {e}")
+                if TASKS_SHEETS_CACHE["data"]:
+                    return TASKS_SHEETS_CACHE["data"]
 
         return []
 

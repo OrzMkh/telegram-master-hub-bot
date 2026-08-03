@@ -1684,12 +1684,12 @@ window.saveTabOrderFromModal = saveTabOrderFromModal;
 
 document.addEventListener("DOMContentLoaded", () => {
     applySavedTabOrder();
-    // Auto-refresh live data every 10 seconds
+    // Auto-refresh live data every 15 seconds
     setInterval(() => {
         if (typeof refreshCurrentTabData === "function") {
             refreshCurrentTabData();
         } else if (typeof fetchCitiesData === "function") {
             fetchCitiesData();
         }
-    }, 10000);
+    }, 15000);
 });
