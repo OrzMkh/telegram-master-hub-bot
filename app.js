@@ -982,6 +982,8 @@ function getSlaBadge(t) {
     }
 }
 
+let localTasksCache = [];
+
 function setTaskFilter(filter) {
     window.currentTaskFilter = filter;
     ["btnFilterTaskAll", "btnFilterTaskActive", "btnFilterTaskUnrated", "btnFilterTaskRated"].forEach(id => {
@@ -992,121 +994,172 @@ function setTaskFilter(filter) {
     if (filter === "active") document.getElementById("btnFilterTaskActive")?.classList.add("active");
     if (filter === "unrated") document.getElementById("btnFilterTaskUnrated")?.classList.add("active");
     if (filter === "rated") document.getElementById("btnFilterTaskRated")?.classList.add("active");
-    loadTasksData();
+    renderTasksList();
 }
 window.setTaskFilter = setTaskFilter;
 
 async function loadTasksData() {
-    const tasksList = document.getElementById("tasksList");
-
     try {
         const res = await fetch("/api/tasks");
-        let tasks = await res.json();
-
-        // Apply task status filtering
-        const filter = window.currentTaskFilter || "all";
-        if (filter === "active") tasks = tasks.filter(t => t.status !== "Done");
-        if (filter === "done") tasks = tasks.filter(t => t.status === "Done");
-        if (filter === "unrated") tasks = tasks.filter(t => t.status === "Done" && (!t.rating || t.rating === 0));
-        if (filter === "rated") tasks = tasks.filter(t => t.status === "Done" && t.rating > 0);
-
-        const countBadge = document.getElementById("taskCountBadge");
-        if (countBadge) countBadge.textContent = `Показано: ${tasks.length}`;
-
-        if (tasks.length === 0) {
-            tasksList.innerHTML = `<div class="muted-text text-center" style="padding:20px; color:var(--text-muted);">Задач не найдено</div>`;
-        } else {
-            tasksList.innerHTML = tasks.map(t => {
-                const isDone = t.status === "Done";
-                const statusClass = isDone ? "closed" : "active";
-                const statusText = isDone ? "Завершено" : "В работе";
-
-                const priority = t.priority || "Medium";
-                let prioBadge = `<span class="badge" style="background:rgba(245,158,11,0.15); color:#f59e0b; border-color:#f59e0b; font-size:10px;">🟡 Средний</span>`;
-                if (priority === "High") prioBadge = `<span class="badge" style="background:rgba(244,63,94,0.15); color:#f43f5e; border-color:#f43f5e; font-size:10px;">🔴 Срочно</span>`;
-                if (priority === "Low") prioBadge = `<span class="badge" style="background:rgba(16,185,129,0.15); color:#10b981; border-color:#10b981; font-size:10px;">🟢 Обычный</span>`;
-
-                const rating = t.rating || 0;
-                let ratingHTML = "";
-                if (isDone) {
-                    if (rating > 0) {
-                        const starsStr = "⭐️".repeat(rating);
-                        ratingHTML = `
-                            <div style="margin-top:10px; padding:10px 14px; background:rgba(192,132,252,0.12); border-radius:10px; border:1px solid rgba(192,132,252,0.3); display:flex; justify-content:space-between; align-items:center;">
-                                <div>
-                                    <span style="font-size:13px; font-weight:700; color:#c084fc;">⭐️ Оценка руководителя: ${starsStr} (${rating}/5)</span>
-                                    ${t.rating_comment ? `<div style="font-size:11px; color:var(--text-muted); margin-top:3px;">💬 "${t.rating_comment}"</div>` : ''}
-                                </div>
-                            </div>
-                        `;
-                    } else {
-                        ratingHTML = `
-                            <div style="margin-top:10px; padding:10px; background:rgba(30,41,59,0.9); border-radius:10px; border:1px solid rgba(192,132,252,0.4); text-align:center;">
-                                <div style="font-size:12px; font-weight:700; color:#c084fc; margin-bottom:8px;">⭐️ Поставьте оценку за выполнение:</div>
-                                <div style="display:flex; justify-content:center; gap:6px;">
-                                    <button class="btn-sm" onclick="rateTaskAction(${t.id}, 1)" style="background:rgba(244,63,94,0.2); color:#f43f5e; border:1px solid #f43f5e; flex:1; font-weight:700;">⭐ 1</button>
-                                    <button class="btn-sm" onclick="rateTaskAction(${t.id}, 2)" style="background:rgba(245,158,11,0.2); color:#f59e0b; border:1px solid #f59e0b; flex:1; font-weight:700;">⭐ 2</button>
-                                    <button class="btn-sm" onclick="rateTaskAction(${t.id}, 3)" style="background:rgba(234,179,8,0.2); color:#eab308; border:1px solid #eab308; flex:1; font-weight:700;">⭐ 3</button>
-                                    <button class="btn-sm" onclick="rateTaskAction(${t.id}, 4)" style="background:rgba(59,130,246,0.2); color:#3b82f6; border:1px solid #3b82f6; flex:1; font-weight:700;">⭐ 4</button>
-                                    <button class="btn-sm" onclick="rateTaskAction(${t.id}, 5)" style="background:rgba(16,185,129,0.2); color:#10b981; border:1px solid #10b981; flex:1; font-weight:700;">⭐ 5</button>
-                                </div>
-                            </div>
-                        `;
-                    }
-                }
-
-                return `
-                <div class="task-card" style="margin-bottom:12px; padding:14px; background:rgba(30,41,59,0.7); border-radius:12px; border:1px solid rgba(255,255,255,0.08);">
-                    <div class="task-header" style="display:flex; justify-content:space-between; align-items:center;">
-                        <div style="display:flex; align-items:center; gap:6px;">
-                            <span class="task-id" style="font-weight:700;">#${t.id}</span>
-                            ${prioBadge}
-                        </div>
-                        <span class="task-status ${statusClass}">${statusText}</span>
-                    </div>
-
-                    <div class="task-text" style="font-size:14px; font-weight:600; margin:8px 0; color:var(--text-main);">${t.task_text}</div>
-
-                    <div class="task-meta" style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--text-muted);">
-                        <span>👤 Исполнитель: <b style="color:var(--text-main);">${t.assignee || 'Команда'}</b></span>
-                        <span>⏱ SLA: ${getSlaBadge(t)}</span>
-                    </div>
-
-                    ${!isDone ? `<button class="btn-sm btn-primary-sm" onclick="completeTaskAction(${t.id})" style="margin-top:10px; width:100%;">✅ Завершить задачу</button>` : ''}
-                    ${ratingHTML}
-                </div>
-            `;
-            }).join("");
-        }
+        localTasksCache = await res.json();
+        renderTasksList();
     } catch (e) {
         console.error("Failed to load tasks data:", e);
     }
 }
 
-async function completeTaskAction(taskId) {
+function renderTasksList() {
+    const tasksList = document.getElementById("tasksList");
+    if (!tasksList) return;
+
+    let tasks = [...localTasksCache];
+
+    // Apply task status filtering
+    const filter = window.currentTaskFilter || "all";
+    if (filter === "active") tasks = tasks.filter(t => t.status !== "Done");
+    if (filter === "done") tasks = tasks.filter(t => t.status === "Done");
+    if (filter === "unrated") tasks = tasks.filter(t => t.status === "Done" && (!t.rating || t.rating === 0));
+    if (filter === "rated") tasks = tasks.filter(t => t.status === "Done" && t.rating > 0);
+
+    const countBadge = document.getElementById("taskCountBadge");
+    if (countBadge) countBadge.textContent = `Показано: ${tasks.length}`;
+
+    if (tasks.length === 0) {
+        tasksList.innerHTML = `<div class="muted-text text-center" style="padding:24px; color:var(--text-muted); font-size:13px;">Задач не найдено</div>`;
+    } else {
+        tasksList.innerHTML = tasks.map(t => {
+            const isDone = t.status === "Done";
+            const statusClass = isDone ? "closed" : "active";
+            const statusText = isDone ? "Завершено" : "В работе";
+
+            const priority = t.priority || "Medium";
+            let prioBadge = `<span class="badge" style="background:rgba(245,158,11,0.15); color:#f59e0b; border-color:#f59e0b; font-size:10px;">🟡 Средний</span>`;
+            if (priority === "High") prioBadge = `<span class="badge" style="background:rgba(244,63,94,0.15); color:#f43f5e; border-color:#f43f5e; font-size:10px;">🔴 Срочно</span>`;
+            if (priority === "Low") prioBadge = `<span class="badge" style="background:rgba(16,185,129,0.15); color:#10b981; border-color:#10b981; font-size:10px;">🟢 Обычный</span>`;
+
+            const rating = t.rating || 0;
+            let ratingHTML = "";
+            if (isDone) {
+                if (rating > 0) {
+                    const starsStr = "⭐️".repeat(rating);
+                    ratingHTML = `
+                        <div style="margin-top:10px; padding:10px 14px; background:rgba(192,132,252,0.12); border-radius:10px; border:1px solid rgba(192,132,252,0.3); display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <span style="font-size:13px; font-weight:700; color:#c084fc;">⭐️ Оценка руководителя: ${starsStr} (${rating}/5)</span>
+                                ${t.rating_comment ? `<div style="font-size:11px; color:var(--text-muted); margin-top:3px;">💬 "${t.rating_comment}"</div>` : ''}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    ratingHTML = `
+                        <div style="margin-top:10px; padding:10px; background:rgba(30,41,59,0.9); border-radius:10px; border:1px solid rgba(192,132,252,0.4); text-align:center;">
+                            <div style="font-size:12px; font-weight:700; color:#c084fc; margin-bottom:8px;">⭐️ Поставьте оценку за выполнение:</div>
+                            <div style="display:flex; justify-content:center; gap:6px;">
+                                <button class="btn-sm" onclick="rateTaskAction(${t.id}, 1, event)" style="background:rgba(244,63,94,0.2); color:#f43f5e; border:1px solid #f43f5e; flex:1; font-weight:700; cursor:pointer;">⭐ 1</button>
+                                <button class="btn-sm" onclick="rateTaskAction(${t.id}, 2, event)" style="background:rgba(245,158,11,0.2); color:#f59e0b; border:1px solid #f59e0b; flex:1; font-weight:700; cursor:pointer;">⭐ 2</button>
+                                <button class="btn-sm" onclick="rateTaskAction(${t.id}, 3, event)" style="background:rgba(234,179,8,0.2); color:#eab308; border:1px solid #eab308; flex:1; font-weight:700; cursor:pointer;">⭐ 3</button>
+                                <button class="btn-sm" onclick="rateTaskAction(${t.id}, 4, event)" style="background:rgba(59,130,246,0.2); color:#3b82f6; border:1px solid #3b82f6; flex:1; font-weight:700; cursor:pointer;">⭐ 4</button>
+                                <button class="btn-sm" onclick="rateTaskAction(${t.id}, 5, event)" style="background:rgba(16,185,129,0.2); color:#10b981; border:1px solid #10b981; flex:1; font-weight:700; cursor:pointer;">⭐ 5</button>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            return `
+            <div id="task-card-${t.id}" class="task-card" style="margin-bottom:12px; padding:14px; background:rgba(30,41,59,0.7); border-radius:12px; border:1px solid rgba(255,255,255,0.08); transition:all 0.3s ease;">
+                <div class="task-header" style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span class="task-id" style="font-weight:700;">#${t.id}</span>
+                        ${prioBadge}
+                    </div>
+                    <span class="task-status ${statusClass}">${statusText}</span>
+                </div>
+
+                <div class="task-text" style="font-size:14px; font-weight:600; margin:8px 0; color:var(--text-main);">${t.task_text}</div>
+
+                <div class="task-meta" style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--text-muted);">
+                    <span>👤 Исполнитель: <b style="color:var(--text-main);">${t.assignee || 'Команда'}</b></span>
+                    <span>⏱ SLA: ${getSlaBadge(t)}</span>
+                </div>
+
+                ${!isDone ? `<button class="btn-sm btn-primary-sm" onclick="completeTaskAction(${t.id}, event)" style="margin-top:10px; width:100%; cursor:pointer;">✅ Завершить задачу</button>` : ''}
+                ${ratingHTML}
+            </div>
+        `;
+        }).join("");
+    }
+}
+
+async function completeTaskAction(taskId, event) {
+    if (event && event.currentTarget) {
+        const btn = event.currentTarget;
+        btn.disabled = true;
+        btn.innerHTML = "⏳ Завершаем...";
+        btn.style.opacity = "0.7";
+    }
+
+    const card = document.getElementById(`task-card-${taskId}`);
+    if (card) {
+        card.style.opacity = "0.3";
+        card.style.transform = "scale(0.97)";
+    }
+
+    // Update in-memory local cache immediately
+    const found = localTasksCache.find(t => String(t.id) === String(taskId));
+    if (found) {
+        found.status = "Done";
+        found.rating = 0;
+    }
+
+    setTimeout(() => {
+        renderTasksList();
+        updateDashboardView();
+    }, 250);
+
     try {
         await fetch("/api/tasks/complete", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ task_id: taskId })
         });
-        loadTasksData();
-        updateDashboardView();
     } catch (e) {
         console.error("Complete task error:", e);
     }
 }
 window.completeTaskAction = completeTaskAction;
 
-async function rateTaskAction(taskId, rating) {
+async function rateTaskAction(taskId, rating, event) {
+    if (event && event.currentTarget) {
+        const btn = event.currentTarget;
+        btn.disabled = true;
+        btn.innerHTML = `⭐ ${rating} ...`;
+        btn.style.opacity = "0.7";
+    }
+
+    const card = document.getElementById(`task-card-${taskId}`);
+    if (card) {
+        card.style.opacity = "0.3";
+        card.style.transform = "scale(0.97)";
+    }
+
+    // Update in-memory local cache immediately
+    const found = localTasksCache.find(t => String(t.id) === String(taskId));
+    if (found) {
+        found.rating = rating;
+    }
+
+    setTimeout(() => {
+        renderTasksList();
+        updateDashboardView();
+    }, 250);
+
     try {
         await fetch("/api/tasks/rate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ task_id: taskId, rating: rating })
         });
-        loadTasksData();
-        updateDashboardView();
     } catch (e) {
         console.error("Rate task error:", e);
     }
