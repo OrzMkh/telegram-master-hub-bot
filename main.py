@@ -20,7 +20,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "8951006941:AAH2Wc2j2AH1aCvui1Bflr7puDStzHtwN
 
 def get_current_web_app_url():
     load_dotenv(override=True)
-    return os.getenv("WEB_APP_URL", "https://sponsors-ask-files-factors.trycloudflare.com").strip()
+    return os.getenv("WEB_APP_URL", "https://telegram-master-hub-bot.onrender.com").strip()
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -250,6 +250,15 @@ def run_rich_bot():
 async def post_init_callback(application):
     asyncio.create_task(daily_reminder_loop(application))
     logger.info("Started native daily 10:00 AM asyncio reminder task.")
+    url = get_current_web_app_url()
+    try:
+        from telegram import MenuButtonWebApp, WebAppInfo
+        await application.bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(text="🚀 Master Hub App", web_app=WebAppInfo(url=url))
+        )
+        logger.info(f"Successfully updated Telegram Menu Button to: {url}")
+    except Exception as e:
+        logger.error(f"Failed to set Telegram Menu Button: {e}")
 
 def main():
     port = int(os.getenv("PORT", "8085"))
