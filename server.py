@@ -791,7 +791,10 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
 
     def get_cities_data(self):
         if not os.path.exists(BIKES_DB_PATH):
-            return []
+            try:
+                init_local_master_dbs()
+            except Exception:
+                pass
         try:
             conn = sqlite3.connect(BIKES_DB_PATH)
             conn.row_factory = sqlite3.Row
