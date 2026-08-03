@@ -915,19 +915,55 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             return []
 
     def get_tasks_data(self):
-        if not os.path.exists(TASKS_DB_PATH):
-            return []
-        try:
-            conn = sqlite3.connect(TASKS_DB_PATH)
-            conn.row_factory = sqlite3.Row
-            c = conn.cursor()
-            c.execute("SELECT id, task_text, assignee, author, sla_deadline, created_at, status, COALESCE(priority, 'Medium') as priority, COALESCE(city, 'Ташкент') as city, COALESCE(rating, 0) as rating, COALESCE(rating_comment, '') as rating_comment FROM tasks ORDER BY id DESC LIMIT 50")
-            rows = [dict(r) for r in c.fetchall()]
-            conn.close()
-            return rows
-        except Exception as e:
-            logger.error(f"Failed to get tasks: {e}")
-            return []
+        if os.path.exists(TASKS_DB_PATH):
+            try:
+                conn = sqlite3.connect(TASKS_DB_PATH)
+                conn.row_factory = sqlite3.Row
+                c = conn.cursor()
+                c.execute("SELECT id, task_text, assignee, author, sla_deadline, created_at, status, COALESCE(priority, 'Medium') as priority, COALESCE(city, 'Ташкент') as city, COALESCE(rating, 0) as rating, COALESCE(rating_comment, '') as rating_comment FROM tasks ORDER BY id DESC LIMIT 50")
+                rows = [dict(r) for r in c.fetchall()]
+                conn.close()
+                if rows:
+                    return rows
+            except Exception as e:
+                logger.error(f"Failed to get tasks from sqlite: {e}")
+
+        # Fallback: Read live tasks from Google Sheets
+        creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+        if creds_json_env:
+            try:
+                import gspread
+                from google.oauth2.service_account import Credentials
+                scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+                s_clean = creds_json_env.strip().strip("'").strip('"')
+                info = json.loads(s_clean)
+                if isinstance(info.get("private_key"), str):
+                    info["private_key"] = info["private_key"].replace("\\n", "\n")
+                creds = Credentials.from_service_account_info(info, scopes=scopes)
+                client = gspread.authorize(creds)
+                spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
+                sheet = spreadsheet.sheet1
+                records = sheet.get_all_records()
+                tasks = []
+                for i, r in enumerate(records, start=1):
+                    tasks.append({
+                        "id": r.get("ID Задачи", i),
+                        "task_text": r.get("Текст задачи", ""),
+                        "assignee": r.get("Исполнитель", ""),
+                        "author": r.get("Постановщик", ""),
+                        "sla_deadline": r.get("Срок / SLA", ""),
+                        "created_at": r.get("Дата создания", ""),
+                        "status": r.get("Статус", "Active"),
+                        "priority": "Medium",
+                        "city": "Ташкент",
+                        "rating": 0,
+                        "rating_comment": ""
+                    })
+                return tasks[::-1]
+            except Exception as e:
+                logger.error(f"Failed to fetch tasks from Google Sheets: {e}")
+
+        return []
 
     def create_task(self, task_text: str, assignee: str, sla_deadline: str, priority: str = "Medium", city: str = "Ташкент"):
         if not os.path.exists(TASKS_DB_PATH):
