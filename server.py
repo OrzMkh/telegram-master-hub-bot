@@ -1163,9 +1163,37 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 if target_row:
                     stat_col = headers.index("Статус") + 1 if "Статус" in headers else 7
                     sheet.update_cell(target_row, stat_col, "Done")
+                    if not task_text:
+                        row_vals = sheet.row_values(target_row)
+                        text_idx = headers.index("Текст задачи") if "Текст задачи" in headers else 1
+                        ass_idx = headers.index("Исполнитель") if "Исполнитель" in headers else 2
+                        task_text = row_vals[text_idx] if len(row_vals) > text_idx else ""
+                        assignee = row_vals[ass_idx] if len(row_vals) > ass_idx else ""
                 TASKS_SHEETS_CACHE["timestamp"] = 0
             except Exception as e:
                 logger.error(f"Failed to complete task in Google Sheets: {e}")
+
+        # Send completion notification to Telegram group
+        try:
+            bot_token = "8666306951:AAEJ9z2F0t4I2mj2IMPE8TygL6a2k_5ob6g"
+            chat_id = "-1002638798110"
+            safe_task = (task_text or 'Задача').replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            safe_asgn = (assignee or 'Команда').replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            msg_text = (
+                f"✅ <b>ЗАДАЧА #{task_id} ЗАВЕРШЕНА!</b>\n\n"
+                f"📌 <b>Задача:</b> {safe_task}\n"
+                f"👤 <b>Исполнитель:</b> {safe_asgn}\n\n"
+                f"⏳ <i>Ожидает оценки руководителя в приложении...</i>"
+            )
+            payload = {"chat_id": chat_id, "text": msg_text, "parse_mode": "HTML"}
+            req = urllib.request.Request(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            urllib.request.urlopen(req)
+        except Exception as e:
+            logger.error(f"Failed to send completion notification to Telegram: {e}")
 
     def rate_task(self, task_id: int, rating: int, rating_comment: str = ""):
         task_text = ""
@@ -1234,6 +1262,8 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             stars_str = "⭐️" * rating
 
             safe_task = (task_text or 'Задача').replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            safe_asgn = (assignee or 'Команда').replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
             if was_disputed:
                 if rating != prev_init_rating and prev_init_rating > 0:
                     old_stars = "⭐️" * prev_init_rating
