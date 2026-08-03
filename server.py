@@ -844,7 +844,12 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                             if len(rows) > 1:
                                 headers = [str(h).strip() for h in rows[0]]
                                 latest = rows[-1]
-                                iss_idx = headers.index("Выдано") if "Выдано" in headers else 3
+                                iss_idx = (
+                                    headers.index("В поездке") if "В поездке" in headers
+                                    else (headers.index("Всего на линии") if "Всего на линии" in headers
+                                    else (headers.index("На линии") if "На линии" in headers
+                                    else (headers.index("Выдано") if "Выдано" in headers else 5)))
+                                )
                                 brok_idx = headers.index("Сломанные") if "Сломанные" in headers else (headers.index("Сломанные байки") if "Сломанные байки" in headers else 8)
                                 date_idx = headers.index("Дата отчета") if "Дата отчета" in headers else (headers.index("Дата") if "Дата" in headers else 2)
 
@@ -902,7 +907,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                             r_date = rep_data["report_date"]
                             break
 
-                pct = round(((iss + broken) / tot) * 100) if tot > 0 else 0
+                pct = round((iss / tot) * 100) if tot > 0 else 0
                 pct = min(pct, 100)
 
                 result.append({
