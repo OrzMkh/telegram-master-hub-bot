@@ -986,13 +986,14 @@ let localTasksCache = [];
 
 function setTaskFilter(filter) {
     window.currentTaskFilter = filter;
-    ["btnFilterTaskAll", "btnFilterTaskActive", "btnFilterTaskUnrated", "btnFilterTaskRated"].forEach(id => {
+    ["btnFilterTaskAll", "btnFilterTaskActive", "btnFilterTaskUnrated", "btnFilterTaskDisputed", "btnFilterTaskRated"].forEach(id => {
         const btn = document.getElementById(id);
         if (btn) btn.classList.remove("active");
     });
     if (filter === "all") document.getElementById("btnFilterTaskAll")?.classList.add("active");
     if (filter === "active") document.getElementById("btnFilterTaskActive")?.classList.add("active");
     if (filter === "unrated") document.getElementById("btnFilterTaskUnrated")?.classList.add("active");
+    if (filter === "disputed") document.getElementById("btnFilterTaskDisputed")?.classList.add("active");
     if (filter === "rated") document.getElementById("btnFilterTaskRated")?.classList.add("active");
     renderTasksList();
 }
@@ -1018,8 +1019,9 @@ function renderTasksList() {
     const filter = window.currentTaskFilter || "all";
     if (filter === "active") tasks = tasks.filter(t => t.status !== "Done");
     if (filter === "done") tasks = tasks.filter(t => t.status === "Done");
-    if (filter === "unrated") tasks = tasks.filter(t => t.status === "Done" && (!t.rating || t.rating === 0));
-    if (filter === "rated") tasks = tasks.filter(t => t.status === "Done" && t.rating > 0);
+    if (filter === "unrated") tasks = tasks.filter(t => t.status === "Done" && (!t.rating || t.rating === 0) && !t.is_disputed);
+    if (filter === "disputed") tasks = tasks.filter(t => t.is_disputed || (t.rating_comment && t.rating_comment.includes("Оспаривание") && !t.final_rating));
+    if (filter === "rated") tasks = tasks.filter(t => t.status === "Done" && t.rating > 0 && !t.is_disputed);
 
     const countBadge = document.getElementById("taskCountBadge");
     if (countBadge) countBadge.textContent = `Показано: ${tasks.length}`;

@@ -1023,8 +1023,27 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                     sla_idx = headers.index("Срок / SLA") if "Срок / SLA" in headers else 4
                     date_idx = headers.index("Дата создания") if "Дата создания" in headers else 5
                     stat_idx = headers.index("Статус") if "Статус" in headers else 6
+                    init_rat_idx = headers.index("Первоначальная оценка") if "Первоначальная оценка" in headers else (headers.index("Оценка") if "Оценка" in headers else 7)
+                    disp_idx = headers.index("Причина оспаривания") if "Причина оспаривания" in headers else (headers.index("Комментарий / Оспаривание") if "Комментарий / Оспаривание" in headers else 8)
+                    final_rat_idx = headers.index("Последняя оценка") if "Последняя оценка" in headers else 9
 
                     for i, r in enumerate(rows[1:], start=1):
+                        init_rat = r[init_rat_idx] if len(r) > init_rat_idx else "0"
+                        disp_val = r[disp_idx] if len(r) > disp_idx else ""
+                        final_rat = r[final_rat_idx] if len(r) > final_rat_idx else ""
+
+                        try:
+                            init_num = int(str(init_rat).replace("/5", "").strip())
+                        except Exception:
+                            init_num = 0
+
+                        try:
+                            final_num = int(str(final_rat).replace("/5", "").strip())
+                        except Exception:
+                            final_num = 0
+
+                        is_disputed = bool(disp_val.strip() and not final_rat.strip())
+
                         tasks.append({
                             "id": r[id_idx] if len(r) > id_idx and r[id_idx] else i,
                             "task_text": r[text_idx] if len(r) > text_idx else "",
@@ -1035,8 +1054,11 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                             "status": r[stat_idx] if len(r) > stat_idx else "Active",
                             "priority": "Medium",
                             "city": "Ташкент",
-                            "rating": 0,
-                            "rating_comment": ""
+                            "rating": final_num if final_num > 0 else (init_num if not is_disputed else 0),
+                            "initial_rating": init_num,
+                            "final_rating": final_num,
+                            "is_disputed": is_disputed,
+                            "rating_comment": disp_val
                         })
                 res_tasks = tasks[::-1]
                 TASKS_SHEETS_CACHE["data"] = res_tasks
@@ -1058,7 +1080,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             now_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
             c.execute(
                 "INSERT INTO tasks (task_text, assignee, author, sla_deadline, created_at, status, priority, city) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (task_text, assignee, "Master Hub Admin", sla_deadline, now_str, "Active", priority, city)
+                (task_text, assignee, "Руководитель", sla_deadline, now_str, "Active", priority, city)
             )
             task_id = c.lastrowid
             conn.commit()
@@ -1148,23 +1170,9 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
     def rate_task(self, task_id: int, rating: int, rating_comment: str = ""):
         task_text = ""
         assignee = ""
-        if os.path.exists(TASKS_DB_PATH):
-            try:
-                conn = sqlite3.connect(TASKS_DB_PATH)
-                conn.row_factory = sqlite3.Row
-                c = conn.cursor()
-                c.execute("SELECT task_text, assignee FROM tasks WHERE id = ?", (task_id,))
-                row = c.fetchone()
-                if row:
-                    task_text = row["task_text"]
-                    assignee = row["assignee"]
-                c.execute("UPDATE tasks SET rating = ?, rating_comment = ?, is_disputed = 0 WHERE id = ?", (rating, rating_comment, task_id))
-                conn.commit()
-                conn.close()
-            except Exception as e:
-                logger.error(f"Failed to save rating in sqlite: {e}")
+        prev_init_rating = 0
+        was_disputed = False
 
-        # Update rating in Google Sheets
         creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
         if creds_json_env:
             try:
@@ -1188,42 +1196,77 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                         target_row = idx + 1
                         break
                 if target_row:
-                    rat_col = headers.index("Оценка") + 1 if "Оценка" in headers else 8
-                    sheet.update_cell(target_row, rat_col, f"{rating}/5")
-                    if not task_text:
-                        row_vals = sheet.row_values(target_row)
-                        text_idx = headers.index("Текст задачи") if "Текст задачи" in headers else 1
-                        ass_idx = headers.index("Исполнитель") if "Исполнитель" in headers else 2
-                        task_text = row_vals[text_idx] if len(row_vals) > text_idx else ""
-                        assignee = row_vals[ass_idx] if len(row_vals) > ass_idx else ""
+                    row_vals = sheet.row_values(target_row)
+                    text_idx = headers.index("Текст задачи") if "Текст задачи" in headers else 1
+                    ass_idx = headers.index("Исполнитель") if "Исполнитель" in headers else 2
+                    init_rat_idx = headers.index("Первоначальная оценка") if "Первоначальная оценка" in headers else (headers.index("Оценка") if "Оценка" in headers else 7)
+                    disp_idx = headers.index("Причина оспаривания") if "Причина оспаривания" in headers else (headers.index("Комментарий / Оспаривание") if "Комментарий / Оспаривание" in headers else 8)
+
+                    task_text = row_vals[text_idx] if len(row_vals) > text_idx else ""
+                    assignee = row_vals[ass_idx] if len(row_vals) > ass_idx else ""
+                    raw_init = row_vals[init_rat_idx] if len(row_vals) > init_rat_idx else "0"
+                    raw_disp = row_vals[disp_idx] if len(row_vals) > disp_idx else ""
+
+                    try:
+                        prev_init_rating = int(str(raw_init).replace("/5", "").strip())
+                    except Exception:
+                        prev_init_rating = 0
+
+                    if raw_disp.strip():
+                        was_disputed = True
+
+                    init_col = headers.index("Первоначальная оценка") + 1 if "Первоначальная оценка" in headers else 8
+                    final_col = headers.index("Последняя оценка") + 1 if "Последняя оценка" in headers else 10
+
+                    if not raw_init.strip() or raw_init.strip() == "0":
+                        sheet.update_cell(target_row, init_col, f"{rating}/5")
+                        prev_init_rating = rating
+                    sheet.update_cell(target_row, final_col, f"{rating}/5")
+
                 TASKS_SHEETS_CACHE["timestamp"] = 0
             except Exception as e:
                 logger.error(f"Failed to update task rating in Google Sheets: {e}")
 
-        # Send Telegram rating notification with Dispute button to Telegram group
+        # Send Telegram notification
         try:
             bot_token = "8666306951:AAEJ9z2F0t4I2mj2IMPE8TygL6a2k_5ob6g"
             chat_id = "-1002638798110"
             stars_str = "⭐️" * rating
 
             safe_task = (task_text or 'Задача').replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            safe_asgn = (assignee or 'Команда').replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-            msg_text = (
-                f"⭐️ <b>ОЦЕНКА ЗАДАЧИ #{task_id}</b>\n\n"
-                f"📌 <b>Задача:</b> {safe_task}\n"
-                f"👤 <b>Исполнитель:</b> {safe_asgn}\n"
-                f"👑 <b>Оценка руководителя:</b> {stars_str} ({rating}/5)\n\n"
-                f"⚖️ <i>Исполнитель может оспорить оценку, если не согласен:</i>"
-            )
-
-            keyboard = {
-                "inline_keyboard": [
-                    [
-                        {"text": "⚖️ Оспорить оценку", "callback_data": f"dispute_task_{task_id}"}
+            if was_disputed:
+                if rating != prev_init_rating and prev_init_rating > 0:
+                    old_stars = "⭐️" * prev_init_rating
+                    msg_text = (
+                        f"⚖️ <b>РЕЗУЛЬТАТ ОСПАРИВАНИЯ ЗАДАЧИ #{task_id}</b>\n\n"
+                        f"✅ <b>Вы оспорили задачу, и оценка была изменена!</b>\n"
+                        f"📌 <b>Задача:</b> {safe_task}\n"
+                        f"👤 <b>Исполнитель:</b> {safe_asgn}\n\n"
+                        f"📉 <b>Первоначальная оценка:</b> {old_stars} ({prev_init_rating}/5)\n"
+                        f"📈 <b>Новая (финальная) оценка:</b> {stars_str} ({rating}/5)"
+                    )
+                else:
+                    msg_text = (
+                        f"⚖️ <b>РЕЗУЛЬТАТ ОСПАРИВАНИЯ ЗАДАЧИ #{task_id}</b>\n\n"
+                        f"❌ <b>Оценка по задаче оставлена без изменений.</b>\n"
+                        f"📌 <b>Задача:</b> {safe_task}\n"
+                        f"👤 <b>Исполнитель:</b> {safe_asgn}\n\n"
+                        f"👑 <b>Финишная оценка:</b> {stars_str} ({rating}/5)"
+                    )
+                keyboard = None
+            else:
+                msg_text = (
+                    f"⭐️ <b>ОЦЕНКА ЗАДАЧИ #{task_id}</b>\n\n"
+                    f"📌 <b>Задача:</b> {safe_task}\n"
+                    f"👤 <b>Исполнитель:</b> {safe_asgn}\n"
+                    f"👑 <b>Оценка руководителя:</b> {stars_str} ({rating}/5)\n\n"
+                    f"⚖️ <i>Исполнитель может оспорить оценку, если не согласен:</i>"
+                )
+                keyboard = {
+                    "inline_keyboard": [
+                        [{"text": "⚖️ Оспорить оценку", "callback_data": f"dispute_task_{task_id}"}]
                     ]
-                ]
-            }
+                }
 
             payload = {
                 "chat_id": chat_id,
