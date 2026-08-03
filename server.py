@@ -12,7 +12,12 @@ import openpyxl.styles
 import openpyxl.utils
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
+import time
+
 logger = logging.getLogger(__name__)
+
+BIKE_SHEETS_CACHE = {"timestamp": 0, "data": {}}
+TASKS_SHEETS_CACHE = {"timestamp": 0, "data": []}
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if os.path.exists(os.path.join(BASE_DIR, "web_app", "index.html")):
@@ -531,6 +536,14 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self):
+        if self.path in ("/", "/health", "/ping"):
+            index_path = os.path.join(WEB_APP_DIR, "index.html")
+            if not os.path.exists(index_path):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(b"OK - Service is running")
+                return
         if self.path.startswith("/api/"):
             self.handle_api_get()
         else:
@@ -770,98 +783,157 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
     def get_dashboard_data(self):
-        tot_bikes = 0
-        tot_users = 0
-        if os.path.exists(BIKES_DB_PATH):
-            try:
-                conn = sqlite3.connect(BIKES_DB_PATH)
-                conn.row_factory = sqlite3.Row
-                c = conn.cursor()
-                c.execute("SELECT SUM(total_bikes) as tot FROM cities")
-                row = c.fetchone()
-                tot_bikes = row["tot"] if row and row["tot"] else 0
+        cities_list = self.get_cities_data()
+        tot_bikes = sum(int(c.get("total_bikes") or 0) for c in cities_list)
+        tot_issued = sum(int(c.get("issued") or 0) for c in cities_list)
+        share_on_line = round((tot_issued / tot_bikes) * 100) if tot_bikes > 0 else 0
 
-                c.execute("SELECT COUNT(*) as cnt FROM users")
-                row_u = c.fetchone()
-                tot_users = row_u["cnt"] if row_u else 0
-                conn.close()
-            except Exception:
-                pass
-
-        tot_tasks = 0
-        if os.path.exists(TASKS_DB_PATH):
-            try:
-                conn_t = sqlite3.connect(TASKS_DB_PATH)
-                conn_t.row_factory = sqlite3.Row
-                ct = conn_t.cursor()
-                ct.execute("SELECT COUNT(*) as cnt FROM tasks WHERE status = 'Active'")
-                row_t = ct.fetchone()
-                tot_tasks = row_t["cnt"] if row_t else 0
-                conn_t.close()
-            except Exception:
-                pass
+        tot_tasks = len(self.get_tasks_data())
 
         return {
             "total_bikes": tot_bikes,
-            "share_on_line": 68,
+            "share_on_line": share_on_line,
             "active_tasks": tot_tasks,
-            "total_users": tot_users,
+            "total_users": len(cities_list),
         }
 
     def get_cities_data(self):
-        if not os.path.exists(BIKES_DB_PATH):
-            return []
+        default_cities_fallback = [
+            {"id": 1, "name": "Ташкент", "total_bikes": 1670, "has_bike_types": 0},
+            {"id": 2, "name": "Самарканд", "total_bikes": 200, "has_bike_types": 0},
+            {"id": 3, "name": "Фергана", "total_bikes": 80, "has_bike_types": 0},
+            {"id": 4, "name": "Андижан", "total_bikes": 50, "has_bike_types": 0},
+            {"id": 5, "name": "Бухара", "total_bikes": 30, "has_bike_types": 0},
+            {"id": 6, "name": "Навои", "total_bikes": 30, "has_bike_types": 0},
+            {"id": 7, "name": "Карши", "total_bikes": 30, "has_bike_types": 0},
+            {"id": 8, "name": "Ургенч", "total_bikes": 30, "has_bike_types": 0},
+            {"id": 9, "name": "Нукус", "total_bikes": 30, "has_bike_types": 0},
+            {"id": 10, "name": "Коканд", "total_bikes": 25, "has_bike_types": 0},
+            {"id": 11, "name": "Наманган", "total_bikes": 25, "has_bike_types": 0},
+        ]
+        
+        raw_rows = []
         try:
+            if not os.path.exists(BIKES_DB_PATH):
+                init_local_master_dbs()
             conn = sqlite3.connect(BIKES_DB_PATH)
             conn.row_factory = sqlite3.Row
             c = conn.cursor()
-            c.execute("""
-                SELECT 
-                    c.id, 
-                    c.name, 
-                    c.total_bikes, 
-                    c.has_bike_types,
-                    COALESCE(r.issued, 0) as issued,
-                    COALESCE(r.broken_bikes, 0) as broken_bikes,
-                    r.report_date
-                FROM cities c
-                LEFT JOIN (
-                    SELECT city, issued, broken_bikes, report_date, MAX(id) as max_id
-                    FROM bike_reports
-                    GROUP BY city
-                ) r ON (c.name LIKE '%' || r.city || '%' OR r.city LIKE '%' || c.name || '%')
-                ORDER BY CASE WHEN c.name LIKE '%Ташкент%' THEN 1 ELSE 2 END, c.id ASC
-            """)
+            c.execute("SELECT c.id, c.name, c.total_bikes, c.has_bike_types FROM cities c ORDER BY CASE WHEN c.name LIKE '%Ташкент%' THEN 1 ELSE 2 END, c.id ASC")
             raw_rows = [dict(r) for r in c.fetchall()]
             conn.close()
-
-            result = []
-            for r in raw_rows:
-                tot = int(r.get("total_bikes") or 0)
-                try:
-                    iss = int(r.get("issued") or 0)
-                except (ValueError, TypeError):
-                    iss = 0
-                try:
-                    broken = int(r.get("broken_bikes") or 0)
-                except (ValueError, TypeError):
-                    broken = 0
-                pct = round(((iss + broken) / tot) * 100) if tot > 0 else 0
-                pct = min(pct, 100)
-
-                result.append({
-                    "id": r["id"],
-                    "name": r["name"],
-                    "total_bikes": tot,
-                    "issued": iss,
-                    "percent_online": pct,
-                    "broken_bikes": r["broken_bikes"],
-                    "report_date": r["report_date"]
-                })
-            return result
         except Exception as e:
-            logger.error(f"Failed to get cities: {e}")
-            return []
+            logger.error(f"Error querying cities from db: {e}")
+
+        if not raw_rows:
+            raw_rows = default_cities_fallback
+
+        # Live Google Sheets fallback for bike reports (with 15s in-memory cache to prevent 429 Quota Exceeded)
+        now_time = time.time()
+        sheet_reports = {}
+        if now_time - BIKE_SHEETS_CACHE["timestamp"] < 15 and BIKE_SHEETS_CACHE["data"]:
+            sheet_reports = BIKE_SHEETS_CACHE["data"]
+        else:
+            creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+            if creds_json_env:
+                try:
+                    import gspread
+                    from google.oauth2.service_account import Credentials
+                    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+                    s_clean = creds_json_env.strip().strip("'").strip('"')
+                    info = json.loads(s_clean)
+                    if isinstance(info.get("private_key"), str):
+                        info["private_key"] = info["private_key"].replace("\\n", "\n")
+                    creds = Credentials.from_service_account_info(info, scopes=scopes)
+                    client = gspread.authorize(creds)
+                    spreadsheet = client.open_by_key("1Oskxt5oHfO50PDn47I_7rbn4KGfEoy_JcVsn3mBIiyw")
+                    for ws in spreadsheet.worksheets():
+                        title = ws.title
+                        city_name = title.replace("Байки", "").strip() if "Байки" in title else title.strip()
+                        if not city_name:
+                            continue
+                        rows = ws.get_all_values()
+                        if len(rows) > 1:
+                            latest = rows[-1]
+                            is_new_format = (len(latest) >= 12 and not str(latest[0]).strip().startswith("202"))
+
+                            if is_new_format:
+                                issued_val = latest[5] if len(latest) > 5 else "0"
+                                broken_val = latest[8] if len(latest) > 8 else "0"
+                                date_val = latest[2] if len(latest) > 2 else ""
+                            else:
+                                headers = [str(h).strip() for h in rows[0]]
+                                iss_idx = headers.index("В поездке") if "В поездке" in headers else (headers.index("Всего на линии") if "Всего на линии" in headers else 4)
+                                brok_idx = headers.index("Сломанные") if "Сломанные" in headers else (headers.index("Сломанные байки") if "Сломанные байки" in headers else 6)
+                                date_idx = headers.index("Дата отчета") if "Дата отчета" in headers else (headers.index("Дата") if "Дата" in headers else 1)
+
+                                issued_val = latest[iss_idx] if len(latest) > iss_idx else "0"
+                                broken_val = latest[brok_idx] if len(latest) > brok_idx else "0"
+                                date_val = latest[date_idx] if len(latest) > date_idx else ""
+
+                            try:
+                                iss_num = int(issued_val)
+                            except (ValueError, TypeError):
+                                iss_num = 0
+                            try:
+                                brok_num = int(broken_val)
+                            except (ValueError, TypeError):
+                                brok_num = 0
+
+                            sheet_reports[city_name.lower()] = {
+                                "issued": iss_num,
+                                "broken": brok_num,
+                                "report_date": date_val
+                            }
+                    BIKE_SHEETS_CACHE["data"] = sheet_reports
+                    BIKE_SHEETS_CACHE["timestamp"] = now_time
+                except Exception as e:
+                    logger.error(f"Failed to fetch bike reports from Google Sheets: {e}")
+                    if BIKE_SHEETS_CACHE["data"]:
+                        sheet_reports = BIKE_SHEETS_CACHE["data"]
+
+        result = []
+        for r in raw_rows:
+            tot = int(r.get("total_bikes") or 0)
+            c_name_lower = r["name"].lower()
+
+            iss = 0
+            broken = 0
+            r_date = r.get("report_date")
+
+            try:
+                iss = int(r.get("issued") or 0)
+                broken = int(r.get("broken_bikes") or 0)
+            except (ValueError, TypeError):
+                pass
+
+            # Always prioritize live Google Sheets report data if available
+            for sheet_city, rep_data in sheet_reports.items():
+                if sheet_city in c_name_lower or c_name_lower in sheet_city:
+                    try:
+                        iss = int(rep_data["issued"])
+                    except Exception:
+                        pass
+                    try:
+                        broken = int(rep_data["broken"])
+                    except Exception:
+                        pass
+                    r_date = rep_data["report_date"]
+                    break
+
+            pct = round((iss / tot) * 100) if tot > 0 else 0
+            pct = min(pct, 100)
+
+            result.append({
+                "id": r["id"],
+                "name": r["name"],
+                "total_bikes": tot,
+                "issued": iss,
+                "percent_online": pct,
+                "broken_bikes": broken,
+                "report_date": r_date
+            })
+        return result
 
     def update_city_total(self, city_id: int, total_bikes: int):
         if not os.path.exists(BIKES_DB_PATH):
@@ -891,28 +963,21 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             return []
 
     def get_broken_bikes_by_city(self):
-        if not os.path.exists(BIKES_DB_PATH):
-            return []
-        try:
-            conn = sqlite3.connect(BIKES_DB_PATH)
-            conn.row_factory = sqlite3.Row
-            c = conn.cursor()
-            c.execute("""
-                SELECT b.city, b.broken_bikes, b.report_date, b.username
-                FROM bike_reports b
-                INNER JOIN (
-                    SELECT city, MAX(id) as max_id
-                    FROM bike_reports
-                    GROUP BY city
-                ) latest ON b.city = latest.city AND b.id = latest.max_id
-                ORDER BY CAST(b.broken_bikes AS INTEGER) DESC
-            """)
-            rows = [dict(r) for r in c.fetchall()]
-            conn.close()
-            return rows
-        except Exception as e:
-            logger.error(f"Failed to get broken bikes by city: {e}")
-            return []
+        cities = self.get_cities_data()
+        res = []
+        for c in cities:
+            try:
+                broken = int(c.get("broken_bikes") or 0)
+            except Exception:
+                broken = 0
+            if broken > 0:
+                res.append({
+                    "city": c.get("name", ""),
+                    "broken_bikes": broken,
+                    "report_date": c.get("report_date", ""),
+                    "username": "Партнёр"
+                })
+        return res
 
     def get_tasks_data(self):
         if os.path.exists(TASKS_DB_PATH):
@@ -928,7 +993,11 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 logger.error(f"Failed to get tasks from sqlite: {e}")
 
-        # Fallback: Read live tasks from Google Sheets
+        # Fallback: Read live tasks from Google Sheets (with 15s cache to prevent 429 Quota Exceeded)
+        now_time = time.time()
+        if now_time - TASKS_SHEETS_CACHE["timestamp"] < 15 and TASKS_SHEETS_CACHE["data"]:
+            return TASKS_SHEETS_CACHE["data"]
+
         creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
         if creds_json_env:
             try:
@@ -943,25 +1012,40 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 client = gspread.authorize(creds)
                 spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
                 sheet = spreadsheet.sheet1
-                records = sheet.get_all_records()
+                rows = sheet.get_all_values()
                 tasks = []
-                for i, r in enumerate(records, start=1):
-                    tasks.append({
-                        "id": r.get("ID Задачи", i),
-                        "task_text": r.get("Текст задачи", ""),
-                        "assignee": r.get("Исполнитель", ""),
-                        "author": r.get("Постановщик", ""),
-                        "sla_deadline": r.get("Срок / SLA", ""),
-                        "created_at": r.get("Дата создания", ""),
-                        "status": r.get("Статус", "Active"),
-                        "priority": "Medium",
-                        "city": "Ташкент",
-                        "rating": 0,
-                        "rating_comment": ""
-                    })
-                return tasks[::-1]
+                if len(rows) > 1:
+                    headers = [str(h).strip() for h in rows[0]]
+                    id_idx = headers.index("ID Задачи") if "ID Задачи" in headers else 0
+                    text_idx = headers.index("Текст задачи") if "Текст задачи" in headers else 1
+                    ass_idx = headers.index("Исполнитель") if "Исполнитель" in headers else 2
+                    aut_idx = headers.index("Постановщик") if "Постановщик" in headers else 3
+                    sla_idx = headers.index("Срок / SLA") if "Срок / SLA" in headers else 4
+                    date_idx = headers.index("Дата создания") if "Дата создания" in headers else 5
+                    stat_idx = headers.index("Статус") if "Статус" in headers else 6
+
+                    for i, r in enumerate(rows[1:], start=1):
+                        tasks.append({
+                            "id": r[id_idx] if len(r) > id_idx and r[id_idx] else i,
+                            "task_text": r[text_idx] if len(r) > text_idx else "",
+                            "assignee": r[ass_idx] if len(r) > ass_idx else "",
+                            "author": r[aut_idx] if len(r) > aut_idx else "",
+                            "sla_deadline": r[sla_idx] if len(r) > sla_idx else "",
+                            "created_at": r[date_idx] if len(r) > date_idx else "",
+                            "status": r[stat_idx] if len(r) > stat_idx else "Active",
+                            "priority": "Medium",
+                            "city": "Ташкент",
+                            "rating": 0,
+                            "rating_comment": ""
+                        })
+                res_tasks = tasks[::-1]
+                TASKS_SHEETS_CACHE["data"] = res_tasks
+                TASKS_SHEETS_CACHE["timestamp"] = now_time
+                return res_tasks
             except Exception as e:
                 logger.error(f"Failed to fetch tasks from Google Sheets: {e}")
+                if TASKS_SHEETS_CACHE["data"]:
+                    return TASKS_SHEETS_CACHE["data"]
 
         return []
 
@@ -1012,17 +1096,93 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             logger.error(f"Failed to create task and notify: {e}")
 
     def complete_task(self, task_id: int):
-        if not os.path.exists(TASKS_DB_PATH):
-            return
+        task_text = ""
+        assignee = ""
+        if os.path.exists(TASKS_DB_PATH):
+            try:
+                conn = sqlite3.connect(TASKS_DB_PATH)
+                conn.row_factory = sqlite3.Row
+                c = conn.cursor()
+                now_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
+                c.execute("SELECT task_text, assignee FROM tasks WHERE id = ?", (task_id,))
+                row = c.fetchone()
+                if row:
+                    task_text = row["task_text"]
+                    assignee = row["assignee"]
+                c.execute("UPDATE tasks SET status = 'Done', completed_at = ? WHERE id = ?", (now_str, task_id))
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                logger.error(f"Failed to complete task in sqlite: {e}")
+
+        # Update status in Google Sheets & invalidate cache
+        creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+        if creds_json_env:
+            try:
+                import gspread
+                from google.oauth2.service_account import Credentials
+                scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+                s_clean = creds_json_env.strip().strip("'").strip('"')
+                info = json.loads(s_clean)
+                if isinstance(info.get("private_key"), str):
+                    info["private_key"] = info["private_key"].replace("\\n", "\n")
+                creds = Credentials.from_service_account_info(info, scopes=scopes)
+                client = gspread.authorize(creds)
+                spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
+                sheet = spreadsheet.sheet1
+                cell = sheet.find(str(task_id))
+                if cell:
+                    headers = [str(h).strip() for h in sheet.row_values(1)]
+                    stat_col = headers.index("Статус") + 1 if "Статус" in headers else 7
+                    sheet.update_cell(cell.row, stat_col, "Done")
+                    if not task_text:
+                        row_vals = sheet.row_values(cell.row)
+                        text_idx = headers.index("Текст задачи") if "Текст задачи" in headers else 1
+                        ass_idx = headers.index("Исполнитель") if "Исполнитель" in headers else 2
+                        task_text = row_vals[text_idx] if len(row_vals) > text_idx else ""
+                        assignee = row_vals[ass_idx] if len(row_vals) > ass_idx else ""
+                TASKS_SHEETS_CACHE["timestamp"] = 0
+            except Exception as e:
+                logger.error(f"Failed to complete task in Google Sheets: {e}")
+
+        # Send Telegram rating notification
         try:
-            conn = sqlite3.connect(TASKS_DB_PATH)
-            c = conn.cursor()
-            now_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
-            c.execute("UPDATE tasks SET status = 'Done', completed_at = ? WHERE id = ?", (now_str, task_id))
-            conn.commit()
-            conn.close()
+            bot_token = "8666306951:AAEJ9z2F0t4I2mj2IMPE8TygL6a2k_5ob6g"
+            chat_id = "-1002638798110"
+            msg_text = (
+                f"✅ <b>ЗАДАЧА #{task_id} ВЫПОЛНЕНА!</b>\n\n"
+                f"📋 <b>Описание:</b> {task_text or 'Выполнено'}\n"
+                f"👤 <b>Исполнитель:</b> {assignee or 'Команда'}\n\n"
+                f"⭐️ <b>Пожалуйста, оцените качество работы:</b>"
+            )
+            keyboard = {
+                "inline_keyboard": [
+                    [
+                        {"text": "⭐️ 1", "callback_data": f"rate_task_{task_id}_1"},
+                        {"text": "⭐️ 2", "callback_data": f"rate_task_{task_id}_2"},
+                        {"text": "⭐️ 3", "callback_data": f"rate_task_{task_id}_3"},
+                        {"text": "⭐️ 4", "callback_data": f"rate_task_{task_id}_4"},
+                        {"text": "⭐️ 5", "callback_data": f"rate_task_{task_id}_5"}
+                    ],
+                    [
+                        {"text": "⚖️ Оспорить оценку", "callback_data": f"dispute_task_{task_id}"}
+                    ]
+                ]
+            }
+            payload = {
+                "chat_id": chat_id,
+                "text": msg_text,
+                "parse_mode": "HTML",
+                "reply_markup": keyboard
+            }
+            req = urllib.request.Request(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            urllib.request.urlopen(req)
         except Exception as e:
-            logger.error(f"Failed to complete task: {e}")
+            logger.error(f"Failed to send task rating prompt to Telegram: {e}")
 
     def rate_task(self, task_id: int, rating: int, rating_comment: str = ""):
         if not os.path.exists(TASKS_DB_PATH):
@@ -1630,7 +1790,88 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         except Exception as e:
             logger.error(f"Failed to delete managed bot: {e}")
 
+def init_local_master_dbs():
+    try:
+        conn = sqlite3.connect(BIKES_DB_PATH)
+        c = conn.cursor()
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS cities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                has_bike_types INTEGER DEFAULT 0,
+                total_bikes INTEGER DEFAULT 80,
+                created_at TEXT NOT NULL
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS bike_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                username TEXT,
+                city TEXT DEFAULT '',
+                report_date TEXT NOT NULL,
+                issued TEXT NOT NULL,
+                returned TEXT NOT NULL,
+                total_in_trip TEXT NOT NULL,
+                new_bikes TEXT NOT NULL,
+                old_bikes TEXT NOT NULL,
+                broken_bikes TEXT NOT NULL,
+                return_reasons TEXT NOT NULL,
+                comment TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+        default_cities = [
+            ("Ташкент", 1670, 0),
+            ("Самарканд", 200, 0),
+            ("Фергана", 80, 0),
+            ("Андижан", 50, 0),
+            ("Бухара", 30, 0),
+            ("Навои", 30, 0),
+            ("Карши", 30, 0),
+            ("Ургенч", 30, 0),
+            ("Нукус", 30, 0),
+            ("Коканд", 25, 0),
+            ("Наманган", 25, 0),
+        ]
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for c_name, c_bikes, c_types in default_cities:
+            c.execute("SELECT id FROM cities WHERE name = ?", (c_name,))
+            r = c.fetchone()
+            if r:
+                c.execute("UPDATE cities SET total_bikes = ?, has_bike_types = ? WHERE id = ?", (c_bikes, c_types, r[0]))
+            else:
+                c.execute("INSERT INTO cities (name, has_bike_types, total_bikes, created_at) VALUES (?, ?, ?, ?)", (c_name, c_types, c_bikes, now))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error init local bikes db: {e}")
+
+    try:
+        conn_t = sqlite3.connect(TASKS_DB_PATH)
+        ct = conn_t.cursor()
+        ct.execute("""
+            CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_text TEXT NOT NULL,
+                assignee TEXT,
+                author TEXT,
+                sla_deadline TEXT,
+                created_at TEXT,
+                status TEXT DEFAULT 'Active',
+                priority TEXT DEFAULT 'Medium',
+                city TEXT DEFAULT 'Ташкент',
+                rating INTEGER DEFAULT 0,
+                rating_comment TEXT
+            )
+        """)
+        conn_t.commit()
+        conn_t.close()
+    except Exception as e:
+        logger.error(f"Error init local tasks db: {e}")
+
 def run_master_server(port=8085):
+    init_local_master_dbs()
     port = int(os.getenv("PORT", str(port)))
     ThreadingHTTPServer.allow_reuse_address = True
     server = ThreadingHTTPServer(("0.0.0.0", port), MasterHubHandler)
