@@ -957,28 +957,21 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             return []
 
     def get_broken_bikes_by_city(self):
-        if not os.path.exists(BIKES_DB_PATH):
-            return []
-        try:
-            conn = sqlite3.connect(BIKES_DB_PATH)
-            conn.row_factory = sqlite3.Row
-            c = conn.cursor()
-            c.execute("""
-                SELECT b.city, b.broken_bikes, b.report_date, b.username
-                FROM bike_reports b
-                INNER JOIN (
-                    SELECT city, MAX(id) as max_id
-                    FROM bike_reports
-                    GROUP BY city
-                ) latest ON b.city = latest.city AND b.id = latest.max_id
-                ORDER BY CAST(b.broken_bikes AS INTEGER) DESC
-            """)
-            rows = [dict(r) for r in c.fetchall()]
-            conn.close()
-            return rows
-        except Exception as e:
-            logger.error(f"Failed to get broken bikes by city: {e}")
-            return []
+        cities = self.get_cities_data()
+        res = []
+        for c in cities:
+            try:
+                broken = int(c.get("broken_bikes") or 0)
+            except Exception:
+                broken = 0
+            if broken > 0:
+                res.append({
+                    "city": c.get("name", ""),
+                    "broken_bikes": broken,
+                    "report_date": c.get("report_date", ""),
+                    "username": "Партнёр"
+                })
+        return res
 
     def get_tasks_data(self):
         if os.path.exists(TASKS_DB_PATH):
