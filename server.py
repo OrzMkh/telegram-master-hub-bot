@@ -831,16 +831,31 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                         city_name = title.replace("Байки", "").strip() if "Байки" in title else title.strip()
                         if not city_name:
                             continue
-                        records = ws.get_all_records()
-                        if records:
-                            latest = records[-1]
-                            issued = latest.get("Выдано", 0) or latest.get("Выдано байков", 0) or 0
-                            broken = latest.get("Сломанные байки", 0) or latest.get("Сломанные", 0) or 0
-                            r_date = latest.get("Дата отчета", "") or latest.get("Дата", "")
+                        rows = ws.get_all_values()
+                        if len(rows) > 1:
+                            headers = [str(h).strip() for h in rows[0]]
+                            latest = rows[-1]
+                            iss_idx = headers.index("Выдано") if "Выдано" in headers else 3
+                            brok_idx = headers.index("Сломанные") if "Сломанные" in headers else (headers.index("Сломанные байки") if "Сломанные байки" in headers else 8)
+                            date_idx = headers.index("Дата отчета") if "Дата отчета" in headers else (headers.index("Дата") if "Дата" in headers else 2)
+
+                            issued_val = latest[iss_idx] if len(latest) > iss_idx else "0"
+                            broken_val = latest[brok_idx] if len(latest) > brok_idx else "0"
+                            date_val = latest[date_idx] if len(latest) > date_idx else ""
+
+                            try:
+                                iss_num = int(issued_val)
+                            except (ValueError, TypeError):
+                                iss_num = 0
+                            try:
+                                brok_num = int(broken_val)
+                            except (ValueError, TypeError):
+                                brok_num = 0
+
                             sheet_reports[city_name.lower()] = {
-                                "issued": issued,
-                                "broken": broken,
-                                "report_date": r_date
+                                "issued": iss_num,
+                                "broken": brok_num,
+                                "report_date": date_val
                             }
                 except Exception as e:
                     logger.error(f"Failed to fetch bike reports from Google Sheets: {e}")
@@ -970,23 +985,32 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 creds = Credentials.from_service_account_info(info, scopes=scopes)
                 client = gspread.authorize(creds)
                 spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
-                sheet = spreadsheet.sheet1
-                records = sheet.get_all_records()
+                rows = sheet.get_all_values()
                 tasks = []
-                for i, r in enumerate(records, start=1):
-                    tasks.append({
-                        "id": r.get("ID Задачи", i),
-                        "task_text": r.get("Текст задачи", ""),
-                        "assignee": r.get("Исполнитель", ""),
-                        "author": r.get("Постановщик", ""),
-                        "sla_deadline": r.get("Срок / SLA", ""),
-                        "created_at": r.get("Дата создания", ""),
-                        "status": r.get("Статус", "Active"),
-                        "priority": "Medium",
-                        "city": "Ташкент",
-                        "rating": 0,
-                        "rating_comment": ""
-                    })
+                if len(rows) > 1:
+                    headers = [str(h).strip() for h in rows[0]]
+                    id_idx = headers.index("ID Задачи") if "ID Задачи" in headers else 0
+                    text_idx = headers.index("Текст задачи") if "Текст задачи" in headers else 1
+                    ass_idx = headers.index("Исполнитель") if "Исполнитель" in headers else 2
+                    aut_idx = headers.index("Постановщик") if "Постановщик" in headers else 3
+                    sla_idx = headers.index("Срок / SLA") if "Срок / SLA" in headers else 4
+                    date_idx = headers.index("Дата создания") if "Дата создания" in headers else 5
+                    stat_idx = headers.index("Статус") if "Статус" in headers else 6
+
+                    for i, r in enumerate(rows[1:], start=1):
+                        tasks.append({
+                            "id": r[id_idx] if len(r) > id_idx and r[id_idx] else i,
+                            "task_text": r[text_idx] if len(r) > text_idx else "",
+                            "assignee": r[ass_idx] if len(r) > ass_idx else "",
+                            "author": r[aut_idx] if len(r) > aut_idx else "",
+                            "sla_deadline": r[sla_idx] if len(r) > sla_idx else "",
+                            "created_at": r[date_idx] if len(r) > date_idx else "",
+                            "status": r[stat_idx] if len(r) > stat_idx else "Active",
+                            "priority": "Medium",
+                            "city": "Ташкент",
+                            "rating": 0,
+                            "rating_comment": ""
+                        })
                 return tasks[::-1]
             except Exception as e:
                 logger.error(f"Failed to fetch tasks from Google Sheets: {e}")
