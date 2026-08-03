@@ -845,20 +845,22 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                                 continue
                             rows = ws.get_all_values()
                             if len(rows) > 1:
-                                headers = [str(h).strip() for h in rows[0]]
                                 latest = rows[-1]
-                                iss_idx = (
-                                    headers.index("В поездке") if "В поездке" in headers
-                                    else (headers.index("Всего на линии") if "Всего на линии" in headers
-                                    else (headers.index("На линии") if "На линии" in headers
-                                    else (headers.index("Выдано") if "Выдано" in headers else 5)))
-                                )
-                                brok_idx = headers.index("Сломанные") if "Сломанные" in headers else (headers.index("Сломанные байки") if "Сломанные байки" in headers else 8)
-                                date_idx = headers.index("Дата отчета") if "Дата отчета" in headers else (headers.index("Дата") if "Дата" in headers else 2)
+                                is_new_format = (len(latest) >= 12 and not str(latest[0]).strip().startswith("202"))
 
-                                issued_val = latest[iss_idx] if len(latest) > iss_idx else "0"
-                                broken_val = latest[brok_idx] if len(latest) > brok_idx else "0"
-                                date_val = latest[date_idx] if len(latest) > date_idx else ""
+                                if is_new_format:
+                                    issued_val = latest[5] if len(latest) > 5 else "0"
+                                    broken_val = latest[8] if len(latest) > 8 else "0"
+                                    date_val = latest[2] if len(latest) > 2 else ""
+                                else:
+                                    headers = [str(h).strip() for h in rows[0]]
+                                    iss_idx = headers.index("В поездке") if "В поездке" in headers else (headers.index("Всего на линии") if "Всего на линии" in headers else 4)
+                                    brok_idx = headers.index("Сломанные") if "Сломанные" in headers else (headers.index("Сломанные байки") if "Сломанные байки" in headers else 6)
+                                    date_idx = headers.index("Дата отчета") if "Дата отчета" in headers else (headers.index("Дата") if "Дата" in headers else 1)
+
+                                    issued_val = latest[iss_idx] if len(latest) > iss_idx else "0"
+                                    broken_val = latest[brok_idx] if len(latest) > brok_idx else "0"
+                                    date_val = latest[date_idx] if len(latest) > date_idx else ""
 
                                 try:
                                     iss_num = int(issued_val)
