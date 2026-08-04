@@ -980,26 +980,11 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         return res
 
     def get_tasks_data(self):
-        if os.path.exists(TASKS_DB_PATH):
-            try:
-                conn = sqlite3.connect(TASKS_DB_PATH)
-                conn.row_factory = sqlite3.Row
-                c = conn.cursor()
-                c.execute("SELECT id, task_text, assignee, author, sla_deadline, created_at, status, COALESCE(priority, 'Medium') as priority, COALESCE(city, 'Ташкент') as city, COALESCE(rating, 0) as rating, COALESCE(rating_comment, '') as rating_comment FROM tasks ORDER BY id DESC LIMIT 50")
-                rows = [dict(r) for r in c.fetchall()]
-                conn.close()
-                if rows:
-                    return rows
-            except Exception as e:
-                logger.error(f"Failed to get tasks from sqlite: {e}")
-
-        # Fallback: Read live tasks from Google Sheets (with 15s cache to prevent 429 Quota Exceeded)
-        now_time = time.time()
-        if now_time - TASKS_SHEETS_CACHE["timestamp"] < 15 and TASKS_SHEETS_CACHE["data"]:
-            return TASKS_SHEETS_CACHE["data"]
-
         creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+        now_time = time.time()
         if creds_json_env:
+            if now_time - TASKS_SHEETS_CACHE["timestamp"] < 15 and TASKS_SHEETS_CACHE["data"]:
+                return TASKS_SHEETS_CACHE["data"]
             try:
                 import gspread
                 from google.oauth2.service_account import Credentials
@@ -1025,9 +1010,11 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                     stat_idx = headers.index("Статус") if "Статус" in headers else 6
                     init_rat_idx = headers.index("Первоначальная оценка") if "Первоначальная оценка" in headers else (headers.index("Оценка") if "Оценка" in headers else 7)
                     disp_idx = headers.index("Причина оспаривания") if "Причина оспаривания" in headers else (headers.index("Комментарий / Оспаривание") if "Комментарий / Оспаривание" in headers else 8)
-                    final_rat_idx = headers.index("Последняя оценка") if "Последняя оценка" in headers else 9
+                    final_rat_idx = headers.index("Итоговая оценка не меняется") if "Итоговая оценка не меняется" in headers else (headers.index("Последняя оценка") if "Последняя оценка" in headers else 9)
 
                     for i, r in enumerate(rows[1:], start=1):
+                        if not any(str(cell).strip() for cell in r):
+                            continue
                         init_rat = r[init_rat_idx] if len(r) > init_rat_idx else "0"
                         disp_val = r[disp_idx] if len(r) > disp_idx else ""
                         final_rat = r[final_rat_idx] if len(r) > final_rat_idx else ""
@@ -1043,6 +1030,9 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                             final_num = 0
 
                         is_disputed = bool(disp_val.strip() and not final_rat.strip())
+                        status_val = r[stat_idx] if len(r) > stat_idx else "Active"
+                        if is_disputed:
+                            status_val = "Disputed"
 
                         tasks.append({
                             "id": r[id_idx] if len(r) > id_idx and r[id_idx] else i,
@@ -1051,7 +1041,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                             "author": r[aut_idx] if len(r) > aut_idx else "",
                             "sla_deadline": r[sla_idx] if len(r) > sla_idx else "",
                             "created_at": r[date_idx] if len(r) > date_idx else "",
-                            "status": r[stat_idx] if len(r) > stat_idx else "Active",
+                            "status": status_val,
                             "priority": "Medium",
                             "city": "Ташкент",
                             "rating": final_num if final_num > 0 else (init_num if not is_disputed else 0),
@@ -1063,11 +1053,25 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 res_tasks = tasks[::-1]
                 TASKS_SHEETS_CACHE["data"] = res_tasks
                 TASKS_SHEETS_CACHE["timestamp"] = now_time
-                return res_tasks
+                if res_tasks:
+                    return res_tasks
             except Exception as e:
                 logger.error(f"Failed to fetch tasks from Google Sheets: {e}")
                 if TASKS_SHEETS_CACHE["data"]:
                     return TASKS_SHEETS_CACHE["data"]
+
+        if os.path.exists(TASKS_DB_PATH):
+            try:
+                conn = sqlite3.connect(TASKS_DB_PATH)
+                conn.row_factory = sqlite3.Row
+                c = conn.cursor()
+                c.execute("SELECT id, task_text, assignee, author, sla_deadline, created_at, status, COALESCE(priority, 'Medium') as priority, COALESCE(city, 'Ташкент') as city, COALESCE(rating, 0) as rating, COALESCE(rating_comment, '') as rating_comment FROM tasks ORDER BY id DESC LIMIT 50")
+                rows = [dict(r) for r in c.fetchall()]
+                conn.close()
+                if rows:
+                    return rows
+            except Exception as e:
+                logger.error(f"Failed to get tasks from sqlite: {e}")
 
         return []
 
@@ -1563,80 +1567,53 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             return []
 
     def get_team_leads_task_stats(self, month=None):
-        date_pattern1 = None
-        date_pattern2 = None
-        if month and len(month.split("-")) == 2:
-            yyyy, mm = month.split("-")
-            date_pattern1 = f"%.{mm}.{yyyy}%"
-            date_pattern2 = f"{yyyy}-{mm}%"
+        if not month or len(month.split("-")) != 2:
+            month = datetime.datetime.now().strftime("%Y-%m")
+        
+        yyyy, mm = month.split("-")
+        target_dot = f".{mm}.{yyyy}"
+        target_dash = f"{yyyy}-{mm}"
 
         team_leads = [
-            {"name": "Ильясбек (@isslamov)", "role": "Тимлид", "patterns": ["%isslaamov%", "%isslamov%", "%Ильясбек%", "%ilyas%"]},
-            {"name": "Мужахидбек (@axi0603)", "role": "Тимлид", "patterns": ["%axi0603%", "%axi%", "%мужахид%", "%mujahid%"]},
-            {"name": "Жахабек (@Silent_trickster)", "role": "Тимлид", "patterns": ["%Silent_trickster%", "%silenttrickster%", "%jaxa%", "%жаха%", "%jakha%"]}
+            {"name": "Ильясбек (@isslamov)", "role": "Тимлид", "patterns": ["isslaamov", "isslamov", "ильясбек", "ilyas"]},
+            {"name": "Мужахидбек (@axi0603)", "role": "Тимлид", "patterns": ["axi0603", "axi", "мужахид", "mujahid"]},
+            {"name": "Жахабек (@Silent_trickster)", "role": "Тимлид", "patterns": ["silent_trickster", "silenttrickster", "jaxa", "жаха", "jakha"]}
         ]
+        all_tasks = self.get_tasks_data()
         results = []
-        if os.getenv("DATABASE_URL") or os.path.exists(TASKS_DB_PATH):
-            try:
-                conn = sqlite3.connect(TASKS_DB_PATH)
-                c = conn.cursor()
-                for tl in team_leads:
-                    conds_base = " OR ".join(["assignee LIKE ?" for _ in tl["patterns"]])
-                    params_base = list(tl["patterns"])
 
-                    if date_pattern1 and date_pattern2:
-                        query_tot = f"SELECT COUNT(*) FROM tasks WHERE ({conds_base}) AND (created_at LIKE ? OR created_at LIKE ?)"
-                        c.execute(query_tot, params_base + [date_pattern1, date_pattern2])
-                    else:
-                        query_tot = f"SELECT COUNT(*) FROM tasks WHERE ({conds_base})"
-                        c.execute(query_tot, params_base)
-                    total = c.fetchone()[0]
+        for tl in team_leads:
+            tl_tasks = []
+            for t in all_tasks:
+                asgn = str(t.get("assignee", "")).lower()
+                if not any(p in asgn for p in tl["patterns"]):
+                    continue
+                
+                created = str(t.get("created_at", "")).strip()
+                if created and (len(created) >= 7):
+                    if target_dot not in created and target_dash not in created:
+                        continue
+                
+                tl_tasks.append(t)
+            
+            total = len(tl_tasks)
+            done = len([t for t in tl_tasks if str(t.get("status", "")).strip().lower() in ("done", "completed")])
+            active = total - done
+            ratings = [t.get("rating", 0) for t in tl_tasks if t.get("rating", 0) > 0]
+            avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else 0.0
+            percent = round((done / total) * 100) if total > 0 else 0
 
-                    if date_pattern1 and date_pattern2:
-                        query_act = f"SELECT COUNT(*) FROM tasks WHERE ({conds_base}) AND status != 'Done' AND (created_at LIKE ? OR created_at LIKE ?)"
-                        c.execute(query_act, params_base + [date_pattern1, date_pattern2])
-                    else:
-                        query_act = f"SELECT COUNT(*) FROM tasks WHERE ({conds_base}) AND status != 'Done'"
-                        c.execute(query_act, params_base)
-                    active = c.fetchone()[0]
+            results.append({
+                "name": tl["name"],
+                "role": tl["role"],
+                "total": total,
+                "active": active,
+                "done": done,
+                "percent": percent,
+                "avg_rating": avg_rating
+            })
 
-                    if date_pattern1 and date_pattern2:
-                        query_done = f"SELECT COUNT(*) FROM tasks WHERE ({conds_base}) AND status = 'Done' AND (created_at LIKE ? OR created_at LIKE ?)"
-                        c.execute(query_done, params_base + [date_pattern1, date_pattern2])
-                    else:
-                        query_done = f"SELECT COUNT(*) FROM tasks WHERE ({conds_base}) AND status = 'Done'"
-                        c.execute(query_done, params_base)
-                    done = c.fetchone()[0]
-
-                    if date_pattern1 and date_pattern2:
-                        query_rate = f"SELECT AVG(COALESCE(rating, 5)) FROM tasks WHERE ({conds_base}) AND status = 'Done' AND rating > 0 AND (created_at LIKE ? OR created_at LIKE ?)"
-                        c.execute(query_rate, params_base + [date_pattern1, date_pattern2])
-                    else:
-                        query_rate = f"SELECT AVG(COALESCE(rating, 5)) FROM tasks WHERE ({conds_base}) AND status = 'Done' AND rating > 0"
-                        c.execute(query_rate, params_base)
-                    avg_r = c.fetchone()[0]
-                    avg_rating = round(float(avg_r), 1) if (avg_r is not None and done > 0) else 0.0
-
-                    percent = round((done / total * 100)) if total > 0 else 0
-                    results.append({
-                        "name": tl["name"],
-                        "role": tl["role"],
-                        "total": total,
-                        "active": active,
-                        "done": done,
-                        "percent": percent,
-                        "avg_rating": avg_rating
-                    })
-                conn.close()
-                return results
-            except Exception as e:
-                logger.error(f"Failed to get team leads task stats: {e}")
-
-        return [
-            {"name": "Ильясбек (@isslamov)", "role": "Тимлид", "total": 0, "active": 0, "done": 0, "percent": 0, "avg_rating": 0.0},
-            {"name": "Мужахидбек (@axi0603)", "role": "Тимлид", "total": 0, "active": 0, "done": 0, "percent": 0, "avg_rating": 0.0},
-            {"name": "Жахабек (@Silent_trickster)", "role": "Тимлид", "total": 0, "active": 0, "done": 0, "percent": 0, "avg_rating": 0.0}
-        ]
+        return results
 
     def get_users_data(self):
         if not os.path.exists(BIKES_DB_PATH):
