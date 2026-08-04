@@ -1689,12 +1689,14 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                     for row in reversed(rows[1:]):
                         if any(str(cell).strip() for cell in row):
                             n_trip_raw = row[5] if len(row) > 5 else (row[3] if len(row) > 3 else "0")
+                            last_date_raw = row[2] if len(row) > 2 else ""
                             import re
                             m = re.search(r"\d+", str(n_trip_raw))
                             issued_val = int(m.group(0)) if m else 0
                             pct = round((issued_val / 50) * 100)
                             cities[0]["issued"] = issued_val
                             cities[0]["percent_online"] = min(pct, 100)
+                            cities[0]["last_updated"] = last_date_raw if last_date_raw else datetime.datetime.now().strftime("%d.%m.%Y")
                             break
                     return cities
             except Exception as e:

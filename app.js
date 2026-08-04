@@ -1278,12 +1278,16 @@ async function loadRichData() {
             richCitiesList.innerHTML = cities.map(c => `
                 <div class="city-card">
                     <div class="city-header">
-                        <span class="city-name">🅁 ${c.name}</span>
+                        <span class="city-name"><b style="color:#f97316; font-size:16px; font-weight:900;">R</b> ${c.name}</span>
                         <button class="btn-edit-city" onclick="openEditCityModal('${c.id}', '${c.name}', ${c.total_bikes}, true)">✏️ Изменить</button>
                     </div>
                     <div class="city-metrics">
-                        <div class="metric"><span class="val">${c.total_bikes}</span><span class="lbl">Лимит Гибридов Rich</span></div>
-                        <div class="metric"><span class="val">100%</span><span class="lbl">Аптайм</span></div>
+                        <div class="metric"><span class="val">${c.total_bikes}</span><span class="lbl">Парк</span></div>
+                        <div class="metric"><span class="val">${c.issued || 0}</span><span class="lbl">На линии</span></div>
+                        <div class="metric"><span class="val" style="color:var(--accent-emerald);">${c.percent_online || 0}%</span><span class="lbl">% На линии</span></div>
+                    </div>
+                    <div style="font-size:11px; color:var(--text-muted); margin-top:8px; display:flex; justify-content:space-between; border-top:1px solid rgba(255,255,255,0.08); padding-top:6px;">
+                        <span>📅 Дата изменения данных: <b style="color:var(--text-main);">${c.last_updated || c.report_date || '04.08.2026'}</b></span>
                     </div>
                 </div>
             `).join("");
