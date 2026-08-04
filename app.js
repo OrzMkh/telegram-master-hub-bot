@@ -766,19 +766,6 @@ async function updateDashboardView() {
             }
 
             container.innerHTML = `
-                <div class="stats-grid" style="margin-top:16px; margin-bottom:16px;">
-                    <div class="stat-card gradient-purple">
-                        <div class="stat-icon"><b style="color:#f97316; font-weight:900;">R</b></div>
-                        <div class="stat-val" style="color:var(--accent-purple);">${totalRichFleet}</div>
-                        <div class="stat-lbl">Общий парк Гибридов Rich</div>
-                    </div>
-                    <div class="stat-card gradient-emerald">
-                        <div class="stat-icon">🤖</div>
-                        <div class="stat-val">${activeBots}</div>
-                        <div class="stat-lbl">Ботов Rich</div>
-                    </div>
-                </div>
-
                 <div class="card-box" style="margin-bottom:16px;">
                     <div class="card-header" style="margin-bottom:12px;">
                         <h4>🏙 Города и сервисы Rich</h4>
