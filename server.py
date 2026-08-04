@@ -1666,69 +1666,124 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             logger.error(f"Failed to toggle user access: {e}")
 
     def get_rich_cities(self):
-        if not os.path.exists(BIKES_DB_PATH):
-            return []
-        try:
-            conn = sqlite3.connect(BIKES_DB_PATH)
-            conn.row_factory = sqlite3.Row
-            c = conn.cursor()
-            c.execute("SELECT id, name, total_bikes FROM rich_cities ORDER BY id ASC")
-            cities = [dict(r) for r in c.fetchall()]
+        cities = [{"id": 1, "name": "Ташкент", "total_bikes": 50, "issued": 0, "percent_online": 0}]
+        creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+        if creds_json_env:
+            try:
+                import gspread
+                from google.oauth2.service_account import Credentials
+                scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+                s_clean = creds_json_env.strip().strip("'").strip('"')
+                info = json.loads(s_clean)
+                if isinstance(info.get("private_key"), str):
+                    info["private_key"] = info["private_key"].replace("\\n", "\n")
+                creds = Credentials.from_service_account_info(info, scopes=scopes)
+                client = gspread.authorize(creds)
+                spreadsheet = client.open_by_key("1Oskxt5oHfO50PDn47I_7rbn4KGfEoy_JcVsn3mBIiyw")
+                try:
+                    sheet = spreadsheet.worksheet("Rich Ташкент")
+                except Exception:
+                    sheet = spreadsheet.worksheet("Rich")
+                rows = sheet.get_all_values()
+                if len(rows) > 1:
+                    for row in reversed(rows[1:]):
+                        if any(str(cell).strip() for cell in row):
+                            n_trip_raw = row[5] if len(row) > 5 else (row[3] if len(row) > 3 else "0")
+                            import re
+                            m = re.search(r"\d+", str(n_trip_raw))
+                            issued_val = int(m.group(0)) if m else 0
+                            pct = round((issued_val / 50) * 100)
+                            cities[0]["issued"] = issued_val
+                            cities[0]["percent_online"] = min(pct, 100)
+                            break
+                    return cities
+            except Exception as e:
+                logger.error(f"Failed to read Rich cities from Google Sheets: {e}")
 
-            for city in cities:
-                clean_cname = city['name'].replace('(Rich)', '').strip()
-                c.execute("SELECT issued FROM rich_reports WHERE city LIKE ? OR city = ? ORDER BY id DESC LIMIT 1", (f"%{clean_cname}%", city['name']))
-                rep = c.fetchone()
-                issued = int(rep['issued']) if rep and rep['issued'] is not None and str(rep['issued']).isdigit() else 0
-                pct = round((issued / city['total_bikes']) * 100) if city['total_bikes'] > 0 and issued > 0 else 0
-                city['issued'] = issued
-                city['percent_online'] = pct
+        if os.path.exists(BIKES_DB_PATH):
+            try:
+                conn = sqlite3.connect(BIKES_DB_PATH)
+                conn.row_factory = sqlite3.Row
+                c = conn.cursor()
+                c.execute("SELECT id, name, total_bikes FROM rich_cities ORDER BY id ASC")
+                db_cities = [dict(r) for r in c.fetchall()]
+                if db_cities:
+                    cities = db_cities
+                for city in cities:
+                    clean_cname = city['name'].replace('(Rich)', '').strip()
+                    c.execute("SELECT total_in_trip, issued FROM rich_reports WHERE city LIKE ? OR city = ? ORDER BY id DESC LIMIT 1", (f"%{clean_cname}%", city['name']))
+                    rep = c.fetchone()
+                    issued = int(rep['total_in_trip']) if rep and rep['total_in_trip'] is not None and str(rep['total_in_trip']).isdigit() else (int(rep['issued']) if rep and rep['issued'] is not None and str(rep['issued']).isdigit() else 0)
+                    t_bikes = city.get('total_bikes', 50)
+                    pct = round((issued / t_bikes) * 100) if t_bikes > 0 and issued > 0 else 0
+                    city['issued'] = issued
+                    city['percent_online'] = min(pct, 100)
+                conn.close()
+                return cities
+            except Exception as e:
+                logger.error(f"Failed to get rich cities from DB: {e}")
 
-            conn.close()
-            return cities
-        except Exception as e:
-            logger.error(f"Failed to get rich cities: {e}")
-            return []
-
-    def add_rich_city(self, name: str, total_bikes: int):
-        if not os.path.exists(BIKES_DB_PATH):
-            return
-        try:
-            conn = sqlite3.connect(BIKES_DB_PATH)
-            c = conn.cursor()
-            now_str = datetime.datetime.now().strftime("%d.%m.%Y")
-            c.execute("INSERT OR IGNORE INTO rich_cities (name, total_bikes, created_at) VALUES (?, ?, ?)", (name, total_bikes, now_str))
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"Failed to add rich city: {e}")
-
-    def update_rich_city(self, city_id: int, total_bikes: int):
-        if not os.path.exists(BIKES_DB_PATH):
-            return
-        try:
-            conn = sqlite3.connect(BIKES_DB_PATH)
-            c = conn.cursor()
-            c.execute("UPDATE rich_cities SET total_bikes = ? WHERE id = ?", (total_bikes, city_id))
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"Failed to update rich city: {e}")
+        return cities
 
     def get_rich_reports(self):
-        if not os.path.exists(BIKES_DB_PATH):
-            return []
-        try:
-            conn = sqlite3.connect(BIKES_DB_PATH)
-            conn.row_factory = sqlite3.Row
-            c = conn.cursor()
-            c.execute("SELECT id, username, city, report_date, issued, returned, comment FROM rich_reports ORDER BY id DESC LIMIT 20")
-            rows = [dict(r) for r in c.fetchall()]
-            conn.close()
-            return rows
-        except Exception as e:
-            logger.error(f"Failed to get rich reports: {e}")
-            return []
+        reports = []
+        creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+        if creds_json_env:
+            try:
+                import gspread
+                from google.oauth2.service_account import Credentials
+                scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+                s_clean = creds_json_env.strip().strip("'").strip('"')
+                info = json.loads(s_clean)
+                if isinstance(info.get("private_key"), str):
+                    info["private_key"] = info["private_key"].replace("\\n", "\n")
+                creds = Credentials.from_service_account_info(info, scopes=scopes)
+                client = gspread.authorize(creds)
+                spreadsheet = client.open_by_key("1Oskxt5oHfO50PDn47I_7rbn4KGfEoy_JcVsn3mBIiyw")
+                try:
+                    sheet = spreadsheet.worksheet("Rich Ташкент")
+                except Exception:
+                    sheet = spreadsheet.worksheet("Rich")
+                rows = sheet.get_all_values()
+                if len(rows) > 1:
+                    for row in reversed(rows[1:]):
+                        if not any(str(cell).strip() for cell in row):
+                            continue
+                        rep_id = row[0] if len(row) > 0 else ""
+                        city = row[1] if len(row) > 1 else "Ташкент"
+                        rep_date = row[2] if len(row) > 2 else ""
+                        issued = row[3] if len(row) > 3 else "0"
+                        returned = row[4] if len(row) > 4 else "0"
+                        comment = row[10] if len(row) > 10 else "-"
+                        username = row[11] if len(row) > 11 else "Партнёр"
+                        reports.append({
+                            "id": rep_id,
+                            "city": city,
+                            "report_date": rep_date,
+                            "issued": issued,
+                            "returned": returned,
+                            "comment": comment,
+                            "username": username
+                        })
+                        if len(reports) >= 20:
+                            break
+                    return reports
+            except Exception as e:
+                logger.error(f"Failed to read Rich reports from Google Sheets: {e}")
+
+        if os.path.exists(BIKES_DB_PATH):
+            try:
+                conn = sqlite3.connect(BIKES_DB_PATH)
+                conn.row_factory = sqlite3.Row
+                c = conn.cursor()
+                c.execute("SELECT id, username, city, report_date, issued, returned, comment FROM rich_reports ORDER BY id DESC LIMIT 20")
+                rows = [dict(r) for r in c.fetchall()]
+                conn.close()
+                return rows
+            except Exception as e:
+                logger.error(f"Failed to get rich reports: {e}")
+
+        return reports
 
     def get_rich_stats(self):
         tot_rich_fleet = 0
