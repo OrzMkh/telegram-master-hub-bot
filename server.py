@@ -1244,7 +1244,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                         was_disputed = True
 
                     init_col = headers.index("Первоначальная оценка") + 1 if "Первоначальная оценка" in headers else 8
-                    final_col = headers.index("Последняя оценка") + 1 if "Последняя оценка" in headers else 10
+                    final_col = headers.index("Итоговая оценка не меняется") + 1 if "Итоговая оценка не меняется" in headers else (headers.index("Последняя оценка") + 1 if "Последняя оценка" in headers else 10)
 
                     if not raw_init.strip() or raw_init.strip() == "0":
                         sheet.update_cell(target_row, init_col, f"{rating}/5")
@@ -1257,46 +1257,58 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
 
         # Send Telegram notification
         try:
-            bot_token = "8666306951:AAEJ9z2F0t4I2mj2IMPE8TygL6a2k_5ob6g"
+            bot_token = os.getenv("BOT_TOKEN", "8951006941:AAH2Wc2j2AH1aCvui1Bflr7puDStzHtwNNI").strip()
             chat_id = "-1002638798110"
             stars_str = "⭐️" * rating
 
             safe_task = (task_text or 'Задача').replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             safe_asgn = (assignee or 'Команда').replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            if not safe_asgn.startswith("@") and not safe_asgn.startswith("<b>"):
+                tag_asgn = f"<b>{safe_asgn}</b>"
+            else:
+                tag_asgn = safe_asgn
 
             if was_disputed:
-                if rating != prev_init_rating and prev_init_rating > 0:
+                if rating > prev_init_rating and prev_init_rating > 0:
                     old_stars = "⭐️" * prev_init_rating
                     msg_text = (
                         f"⚖️ <b>РЕЗУЛЬТАТ ОСПАРИВАНИЯ ЗАДАЧИ #{task_id}</b>\n\n"
-                        f"✅ <b>Вы оспорили задачу, и оценка была изменена!</b>\n"
+                        f"🎉 {tag_asgn}, <b>вы выиграли спор! Ваша оценка повышена!</b>\n"
                         f"📌 <b>Задача:</b> {safe_task}\n"
-                        f"👤 <b>Исполнитель:</b> {safe_asgn}\n\n"
                         f"📉 <b>Первоначальная оценка:</b> {old_stars} ({prev_init_rating}/5)\n"
                         f"📈 <b>Новая (финальная) оценка:</b> {stars_str} ({rating}/5)"
                     )
                 else:
                     msg_text = (
                         f"⚖️ <b>РЕЗУЛЬТАТ ОСПАРИВАНИЯ ЗАДАЧИ #{task_id}</b>\n\n"
-                        f"❌ <b>Оценка по задаче оставлена без изменений.</b>\n"
+                        f"❌ {tag_asgn}, <b>вы не выиграли спор. Оценка оставлена без изменений.</b>\n"
                         f"📌 <b>Задача:</b> {safe_task}\n"
-                        f"👤 <b>Исполнитель:</b> {safe_asgn}\n\n"
-                        f"👑 <b>Финишная оценка:</b> {stars_str} ({rating}/5)"
+                        f"👑 <b>Итоговая оценка:</b> {stars_str} ({rating}/5)"
                     )
                 keyboard = None
             else:
-                msg_text = (
-                    f"⭐️ <b>ОЦЕНКА ЗАДАЧИ #{task_id}</b>\n\n"
-                    f"📌 <b>Задача:</b> {safe_task}\n"
-                    f"👤 <b>Исполнитель:</b> {safe_asgn}\n"
-                    f"👑 <b>Оценка руководителя:</b> {stars_str} ({rating}/5)\n\n"
-                    f"⚖️ <i>Исполнитель может оспорить оценку, если не согласен:</i>"
-                )
-                keyboard = {
-                    "inline_keyboard": [
-                        [{"text": "⚖️ Оспорить оценку", "callback_data": f"dispute_task_{task_id}"}]
-                    ]
-                }
+                if rating >= 5:
+                    msg_text = (
+                        f"⭐️ <b>ОЦЕНКА ЗАДАЧИ #{task_id}</b>\n\n"
+                        f"📌 <b>Задача:</b> {safe_task}\n"
+                        f"👤 <b>Исполнитель:</b> {tag_asgn}\n"
+                        f"👑 <b>Оценка руководителя:</b> {stars_str} ({rating}/5)\n\n"
+                        f"🎉 <i>Отличная работа! Высокая оценка (5/5) без возможности оспаривания.</i>"
+                    )
+                    keyboard = None
+                else:
+                    msg_text = (
+                        f"⭐️ <b>ОЦЕНКА ЗАДАЧИ #{task_id}</b>\n\n"
+                        f"📌 <b>Задача:</b> {safe_task}\n"
+                        f"👤 <b>Исполнитель:</b> {tag_asgn}\n"
+                        f"👑 <b>Оценка руководителя:</b> {stars_str} ({rating}/5)\n\n"
+                        f"⚖️ <i>Исполнитель {tag_asgn} может оспорить эту оценку, если не согласен:</i>"
+                    )
+                    keyboard = {
+                        "inline_keyboard": [
+                            [{"text": "⚖️ Оспорить оценку", "callback_data": f"dispute_task_{task_id}"}]
+                        ]
+                    }
 
             payload = {
                 "chat_id": chat_id,

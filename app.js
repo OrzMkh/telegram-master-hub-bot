@@ -70,10 +70,14 @@ function setTaskFilter(filter) {
     document.getElementById("btnFilterTaskAll")?.classList.remove("active");
     document.getElementById("btnFilterTaskActive")?.classList.remove("active");
     document.getElementById("btnFilterTaskDone")?.classList.remove("active");
+    document.getElementById("btnFilterTaskUnrated")?.classList.remove("active");
+    document.getElementById("btnFilterTaskDisputed")?.classList.remove("active");
 
     if (filter === "all") document.getElementById("btnFilterTaskAll")?.classList.add("active");
     if (filter === "active") document.getElementById("btnFilterTaskActive")?.classList.add("active");
     if (filter === "done") document.getElementById("btnFilterTaskDone")?.classList.add("active");
+    if (filter === "unrated") document.getElementById("btnFilterTaskUnrated")?.classList.add("active");
+    if (filter === "disputed") document.getElementById("btnFilterTaskDisputed")?.classList.add("active");
 
     loadTasksData();
 }
