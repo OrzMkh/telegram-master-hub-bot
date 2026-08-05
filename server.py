@@ -31,8 +31,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "8951006941:AAH2Wc2j2AH1aCvui1Bflr7puDStzHtwN
 MASTER_APP_PASSWORD = os.getenv("MASTER_APP_PASSWORD", "9449").strip()
 
 # URLs to the bot services on Render for user management sync
-RICH_BOT_URL = os.getenv("RICH_BOT_URL", "").strip().rstrip("/")
-FLEET_BOT_URL = os.getenv("FLEET_BOT_URL", "").strip().rstrip("/")
+RICH_BOT_URL = os.getenv("RICH_BOT_URL", "https://telegram-rich-bike-bot.onrender.com").strip().rstrip("/")
+FLEET_BOT_URL = os.getenv("FLEET_BOT_URL", "https://telegram-bike-report-bot.onrender.com").strip().rstrip("/")
 INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET", "master_hub_secret_2025").strip()
 
 try:
@@ -582,6 +582,18 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             self.send_json_response(self.fetch_bot_users("rich"))
         elif path == "/api/users/fleet":
             self.send_json_response(self.fetch_bot_users("fleet"))
+        elif path == "/api/debug/bots":
+            rich_users = self.fetch_bot_users("rich")
+            fleet_users = self.fetch_bot_users("fleet")
+            self.send_json_response({
+                "rich_bot_url": RICH_BOT_URL if RICH_BOT_URL else "NOT_SET",
+                "fleet_bot_url": FLEET_BOT_URL if FLEET_BOT_URL else "NOT_SET",
+                "internal_secret_configured": bool(INTERNAL_API_SECRET),
+                "rich_users_count": len(rich_users),
+                "rich_users": rich_users,
+                "fleet_users_count": len(fleet_users),
+                "fleet_users": fleet_users,
+            })
         elif path == "/api/rich/cities":
             self.send_json_response(self.get_rich_cities())
         elif path == "/api/rich/reports":
@@ -1649,15 +1661,10 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         """Fetch user list from Rich or Fleet bot service via HTTP."""
         base_url = RICH_BOT_URL if bot == "rich" else FLEET_BOT_URL
         if not base_url:
-            # Fallback: try local DB if bot URL not configured
-            db = BIKES_DB_PATH
-            return self._read_users_from_db(db)
+            return self._read_users_from_db(BIKES_DB_PATH)
         try:
-            req = urllib.request.Request(
-                f"{base_url}/api/users",
-                headers={"X-Internal-Secret": INTERNAL_API_SECRET}
-            )
-            with urllib.request.urlopen(req, timeout=8) as resp:
+            req = urllib.request.Request(f"{base_url}/api/users")
+            with urllib.request.urlopen(req, timeout=10) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except Exception as e:
             logger.error(f"Failed to fetch users from {bot} bot ({base_url}): {e}")
