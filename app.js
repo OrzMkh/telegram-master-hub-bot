@@ -1203,47 +1203,128 @@ async function populateAssigneesDropdown() {
     dropdown.innerHTML = options;
 }
 
-async function loadUsersData() {
-    const usersList = document.getElementById("usersList");
-    if (!usersList) return;
-    try {
-        const res = await fetch("/api/users");
-        const users = await res.json();
+function switchAccessSubtab(name) {
+    document.querySelectorAll(".access-subtab").forEach(b => b.classList.toggle("active", b.dataset.subtab === name));
+    document.querySelectorAll(".access-subtab-content").forEach(el => {
+        el.style.display = el.id === `access-subtab-${name}` ? "block" : "none";
+    });
+}
 
-        if (users.length === 0) {
-            usersList.innerHTML = `<div class="muted-text text-center">Пользователи не найдены</div>`;
-        } else {
-            usersList.innerHTML = users.map(u => `
-                <div class="user-card">
-                    <div class="user-card-info">
-                        <div class="u-name">${u.full_name || u.username || 'Пользователь'}</div>
-                        <div class="u-meta">@${u.username || 'no_user'} • Роль: ${u.role || 'Partner'}</div>
+function renderUsersList(containerId, countId, users, botName) {
+    const list = document.getElementById(containerId);
+    const countEl = document.getElementById(countId);
+    if (!list) return;
+
+    const filtered = users.filter(u => String(u.user_id) !== "509067967");
+    if (countEl) countEl.textContent = `${filtered.length} чел.`;
+
+    if (filtered.length === 0) {
+        list.innerHTML = `<div class="muted-text text-center" style="padding:18px 0;">Пользователи не найдены</div>`;
+        return;
+    }
+
+    list.innerHTML = filtered.map(u => {
+        const name = u.full_name || u.username || `ID ${u.user_id}`;
+        const isActive = u.is_active === 1;
+        const isAdmin = u.role === "admin";
+        const roleLabel = isAdmin ? "👑 Админ" : "👤 Партнёр";
+        const roleColor = isAdmin ? "#f97316" : "#38bdf8";
+        const statusLabel = isActive ? "✅ Доступ открыт" : "🚫 Заблокирован";
+        const statusColor = isActive ? "#34d399" : "#fb7185";
+
+        return `
+        <div class="user-card-v2" id="ucard-${botName}-${u.user_id}">
+            <div class="user-card-top">
+                <div class="user-avatar-circle">${(name[0] || "?").toUpperCase()}</div>
+                <div class="user-card-info">
+                    <div class="u-name">${name}</div>
+                    <div class="u-meta">ID: <code>${u.user_id}</code>${u.username ? ` • @${u.username}` : ""}</div>
+                    <div class="u-badges">
+                        <span class="u-badge" style="color:${roleColor}; border-color:${roleColor}40; background:${roleColor}15;">${roleLabel}</span>
+                        <span class="u-badge" style="color:${statusColor}; border-color:${statusColor}40; background:${statusColor}15;">${statusLabel}</span>
                     </div>
-                    <button class="toggle-access-btn ${u.is_active ? 'active' : ''}" data-id="${u.user_id}" data-active="${u.is_active}">
-                        ${u.is_active ? '✅ Доступ виден' : '🚫 Заблокирован'}
-                    </button>
                 </div>
-            `).join("");
+            </div>
+            <div class="user-card-actions">
+                <button class="uca-btn uca-role" onclick="changeUserRole('${botName}', ${u.user_id}, '${isAdmin ? "partner" : "admin"}')">
+                    ${isAdmin ? "👤 Понизить" : "👑 Повысить"}
+                </button>
+                <button class="uca-btn uca-toggle ${isActive ? "uca-block" : "uca-allow"}" onclick="toggleUserAccess('${botName}', ${u.user_id}, ${isActive ? 0 : 1})">
+                    ${isActive ? "🚫 Отозвать" : "✅ Включить"}
+                </button>
+                <button class="uca-btn uca-delete" onclick="deleteUser('${botName}', ${u.user_id}, '${name}')">
+                    🗑
+                </button>
+            </div>
+        </div>`;
+    }).join("");
+}
 
-            document.querySelectorAll(".toggle-access-btn").forEach(btn => {
-                btn.addEventListener("click", async () => {
-                    const uid = parseInt(btn.getAttribute("data-id"), 10);
-                    const currActive = parseInt(btn.getAttribute("data-active"), 10);
-                    const newActive = currActive === 1 ? 0 : 1;
+async function loadUsersData() {
+    loadRichUsers();
+    loadFleetUsers();
+}
 
-                    await fetch("/api/users/toggle_access", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ user_id: uid, is_active: newActive })
-                    });
-                    loadUsersData();
-                });
-            });
-        }
+async function loadRichUsers() {
+    const list = document.getElementById("richUsersList");
+    if (list) list.innerHTML = `<div class="loading-spinner">Загрузка...</div>`;
+    try {
+        const res = await fetch("/api/users/rich");
+        const users = await res.json();
+        renderUsersList("richUsersList", "richUsersCount", users, "rich");
     } catch (e) {
-        console.error("Failed to load users data:", e);
+        if (list) list.innerHTML = `<div class="muted-text text-center" style="padding:14px;">Ошибка загрузки</div>`;
+        console.error("loadRichUsers error:", e);
     }
 }
+
+async function loadFleetUsers() {
+    const list = document.getElementById("fleetUsersList");
+    if (list) list.innerHTML = `<div class="loading-spinner">Загрузка...</div>`;
+    try {
+        const res = await fetch("/api/users/fleet");
+        const users = await res.json();
+        renderUsersList("fleetUsersList", "fleetUsersCount", users, "fleet");
+    } catch (e) {
+        if (list) list.innerHTML = `<div class="muted-text text-center" style="padding:14px;">Ошибка загрузки</div>`;
+        console.error("loadFleetUsers error:", e);
+    }
+}
+
+async function toggleUserAccess(bot, userId, newActive) {
+    try {
+        await fetch("/api/users/toggle_access", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bot, user_id: userId, is_active: newActive })
+        });
+        bot === "rich" ? loadRichUsers() : loadFleetUsers();
+    } catch (e) { console.error("toggleUserAccess error:", e); }
+}
+
+async function changeUserRole(bot, userId, newRole) {
+    try {
+        await fetch("/api/users/change_role", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bot, user_id: userId, role: newRole })
+        });
+        bot === "rich" ? loadRichUsers() : loadFleetUsers();
+    } catch (e) { console.error("changeUserRole error:", e); }
+}
+
+async function deleteUser(bot, userId, name) {
+    if (!confirm(`Удалить пользователя «${name}» (ID: ${userId}) из ${bot === "rich" ? "Rich" : "Fleet"} бота?`)) return;
+    try {
+        await fetch("/api/users/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bot, user_id: userId })
+        });
+        bot === "rich" ? loadRichUsers() : loadFleetUsers();
+    } catch (e) { console.error("deleteUser error:", e); }
+}
+
 
 async function loadRichData() {
     const richCitiesList = document.getElementById("richCitiesList");

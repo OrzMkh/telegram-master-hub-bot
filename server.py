@@ -25,7 +25,8 @@ if os.path.exists(os.path.join(BASE_DIR, "web_app", "index.html")):
 else:
     WEB_APP_DIR = BASE_DIR
 
-BIKES_DB_PATH = os.path.join(BASE_DIR, "bike_reports.db")
+BIKES_DB_PATH = os.path.join(BASE_DIR, "bike_reports.db")  # Rich bot DB
+FLEET_DB_PATH = os.getenv("FLEET_DB_PATH", os.path.join(BASE_DIR, "fleet_reports.db"))  # Fleet bot DB
 TASKS_DB_PATH = os.path.join(BASE_DIR, "tasks.db")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8951006941:AAH2Wc2j2AH1aCvui1Bflr7puDStzHtwNNI").strip()
 MASTER_APP_PASSWORD = os.getenv("MASTER_APP_PASSWORD", "7890").strip()
@@ -573,6 +574,10 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             self.send_json_response(self.get_team_leads_task_stats(month))
         elif path == "/api/users":
             self.send_json_response(self.get_users_data())
+        elif path == "/api/users/rich":
+            self.send_json_response(self.get_users_for_db(BIKES_DB_PATH))
+        elif path == "/api/users/fleet":
+            self.send_json_response(self.get_users_for_db(FLEET_DB_PATH))
         elif path == "/api/rich/cities":
             self.send_json_response(self.get_rich_cities())
         elif path == "/api/rich/reports":
@@ -630,8 +635,29 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         elif path == "/api/users/toggle_access":
             user_id = payload.get("user_id")
             is_active = payload.get("is_active", 1)
+            bot = payload.get("bot", "rich")
+            db = FLEET_DB_PATH if bot == "fleet" else BIKES_DB_PATH
             if user_id is not None:
-                self.toggle_user_access(user_id, is_active)
+                self.toggle_user_access_db(user_id, is_active, db)
+                self.send_json_response({"status": "ok"})
+            else:
+                self.send_json_response({"error": "Invalid params"}, status=400)
+        elif path == "/api/users/change_role":
+            user_id = payload.get("user_id")
+            role = payload.get("role", "partner")
+            bot = payload.get("bot", "rich")
+            db = FLEET_DB_PATH if bot == "fleet" else BIKES_DB_PATH
+            if user_id is not None and role in ("admin", "partner"):
+                self.change_user_role_db(user_id, role, db)
+                self.send_json_response({"status": "ok"})
+            else:
+                self.send_json_response({"error": "Invalid params"}, status=400)
+        elif path == "/api/users/delete":
+            user_id = payload.get("user_id")
+            bot = payload.get("bot", "rich")
+            db = FLEET_DB_PATH if bot == "fleet" else BIKES_DB_PATH
+            if user_id is not None:
+                self.delete_user_db(user_id, db)
                 self.send_json_response({"status": "ok"})
             else:
                 self.send_json_response({"error": "Invalid params"}, status=400)
@@ -1616,10 +1642,13 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         return results
 
     def get_users_data(self):
-        if not os.path.exists(BIKES_DB_PATH):
+        return self.get_users_for_db(BIKES_DB_PATH)
+
+    def get_users_for_db(self, db_path: str):
+        if not os.path.exists(db_path):
             return []
         try:
-            conn = sqlite3.connect(BIKES_DB_PATH)
+            conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             c = conn.cursor()
             c.execute("SELECT user_id, username, full_name, role, is_active FROM users ORDER BY rowid ASC")
@@ -1627,20 +1656,47 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             conn.close()
             return rows
         except Exception as e:
-            logger.error(f"Failed to get users: {e}")
+            logger.error(f"Failed to get users from {db_path}: {e}")
             return []
 
     def toggle_user_access(self, user_id: int, is_active: int):
-        if not os.path.exists(BIKES_DB_PATH):
+        self.toggle_user_access_db(user_id, is_active, BIKES_DB_PATH)
+
+    def toggle_user_access_db(self, user_id: int, is_active: int, db_path: str):
+        if not os.path.exists(db_path):
             return
         try:
-            conn = sqlite3.connect(BIKES_DB_PATH)
+            conn = sqlite3.connect(db_path)
             c = conn.cursor()
             c.execute("UPDATE users SET is_active = ? WHERE user_id = ?", (is_active, user_id))
             conn.commit()
             conn.close()
         except Exception as e:
             logger.error(f"Failed to toggle user access: {e}")
+
+    def change_user_role_db(self, user_id: int, role: str, db_path: str):
+        if not os.path.exists(db_path):
+            return
+        try:
+            conn = sqlite3.connect(db_path)
+            c = conn.cursor()
+            c.execute("UPDATE users SET role = ?, is_active = 1 WHERE user_id = ?", (role, user_id))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to change user role: {e}")
+
+    def delete_user_db(self, user_id: int, db_path: str):
+        if not os.path.exists(db_path):
+            return
+        try:
+            conn = sqlite3.connect(db_path)
+            c = conn.cursor()
+            c.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to delete user: {e}")
 
     def get_rich_cities(self):
         cities = [{"id": 1, "name": "Ташкент", "total_bikes": 50, "issued": 0, "percent_online": 0}]

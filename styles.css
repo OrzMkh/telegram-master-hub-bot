@@ -494,6 +494,121 @@ body {
     border-color: rgba(52, 211, 153, 0.3);
 }
 
+/* Access Sub-tabs */
+.access-subtabs {
+    display: flex;
+    gap: 8px;
+    margin: 0 0 14px 0;
+}
+
+.access-subtab {
+    flex: 1;
+    padding: 9px 12px;
+    background: rgba(30, 41, 59, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.access-subtab.active {
+    background: rgba(56, 189, 248, 0.12);
+    border-color: rgba(56, 189, 248, 0.4);
+    color: var(--accent-blue);
+}
+
+/* New user card v2 */
+.user-card-v2 {
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 14px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.user-card-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.user-avatar-circle {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #38bdf8, #818cf8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 16px;
+    color: #0f172a;
+    flex-shrink: 0;
+}
+
+.u-badges {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 5px;
+}
+
+.u-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 20px;
+    border: 1px solid;
+}
+
+.user-card-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.uca-btn {
+    flex: 1;
+    padding: 7px 6px;
+    border-radius: 9px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+.uca-btn:active { opacity: 0.7; }
+
+.uca-role {
+    background: rgba(129, 140, 248, 0.12);
+    color: #818cf8;
+    border-color: rgba(129, 140, 248, 0.3);
+}
+
+.uca-toggle.uca-block {
+    background: rgba(251, 113, 133, 0.12);
+    color: #fb7185;
+    border-color: rgba(251, 113, 133, 0.3);
+}
+
+.uca-toggle.uca-allow {
+    background: rgba(52, 211, 153, 0.12);
+    color: #34d399;
+    border-color: rgba(52, 211, 153, 0.3);
+}
+
+.uca-delete {
+    flex: 0 0 38px;
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.25);
+}
+
 .btn-sm {
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.1);
