@@ -1,32 +1,34 @@
 :root {
-    --bg-dark: #121216;
-    --card-bg: #1b1b22;
-    --card-bg-elevated: #25252e;
-    --card-border: rgba(255, 221, 0, 0.16);
-    --card-border-hover: rgba(255, 221, 0, 0.4);
+    --bg-dark: #081d38;
+    --card-bg: #0d274a;
+    --card-bg-elevated: #133664;
+    --card-border: rgba(56, 189, 248, 0.28);
+    --card-border-hover: rgba(0, 230, 255, 0.65);
     
-    /* Vibrant Yandex Signature Palette */
+    /* Vibrant Yandex Signature Palette + Electric Sky Blue */
     --yandex-yellow: #FFDD00;
     --yandex-yellow-bright: #FFE600;
     --yandex-yellow-hover: #F0CE00;
-    --yandex-yellow-glow: rgba(255, 221, 0, 0.4);
+    --yandex-yellow-glow: rgba(255, 221, 0, 0.45);
     --yandex-gold-gradient: linear-gradient(135deg, #FFDD00 0%, #FFAA00 100%);
+    --yandex-cyan: #00E5FF;
+    --yandex-sky: #38BDF8;
+    --yandex-blue: #2563EB;
     --yandex-red: #FC3F1D;
-    --yandex-blue: #2B66FF;
     --yandex-mint: #10B981;
-    --yandex-purple: #8B5CF6;
+    --yandex-purple: #A855F7;
     --yandex-orange: #FF7700;
     
     /* Legacy aliases */
-    --accent-blue: #2B66FF;
-    --accent-purple: #8B5CF6;
+    --accent-blue: #38BDF8;
+    --accent-purple: #A855F7;
     --accent-emerald: #10B981;
     --accent-amber: #FFDD00;
     --accent-rose: #FC3F1D;
     
     --text-primary: #FFFFFF;
-    --text-secondary: #B4B4BC;
-    --text-muted: #80808C;
+    --text-secondary: #C8E5FF;
+    --text-muted: #8FB7DD;
     
     --font-heading: 'Outfit', 'Manrope', -apple-system, sans-serif;
     --font-body: 'Inter', -apple-system, sans-serif;
@@ -37,9 +39,9 @@
     --radius-sm: 8px;
     --radius-pill: 100px;
     
-    --shadow-card: 0 6px 24px rgba(0, 0, 0, 0.45);
-    --shadow-glow: 0 4px 20px rgba(255, 221, 0, 0.35);
-    --shadow-elevated: 0 14px 36px rgba(0, 0, 0, 0.65);
+    --shadow-card: 0 8px 28px rgba(0, 15, 40, 0.55);
+    --shadow-glow: 0 4px 24px rgba(0, 229, 255, 0.35);
+    --shadow-elevated: 0 16px 40px rgba(0, 10, 30, 0.75);
 }
 
 * {
@@ -50,7 +52,7 @@
 }
 
 body {
-    background-color: var(--bg-dark);
+    background-color: #06182e;
     color: var(--text-primary);
     font-family: var(--font-body);
     min-height: 100vh;
@@ -59,40 +61,42 @@ body {
     align-items: flex-start;
     padding: 0;
     background-image: 
-        radial-gradient(ellipse 90% 40% at 50% -10%, rgba(255, 221, 0, 0.18) 0%, transparent 60%),
-        radial-gradient(circle at 100% 60%, rgba(255, 136, 0, 0.12) 0%, transparent 50%),
-        radial-gradient(circle at 0% 40%, rgba(255, 221, 0, 0.08) 0%, transparent 45%);
+        radial-gradient(ellipse 100% 50% at 50% 0%, #0088ff 0%, transparent 65%),
+        radial-gradient(circle at 100% 40%, #00d2ff 0%, transparent 55%),
+        radial-gradient(circle at 0% 70%, #0055ff 0%, transparent 60%),
+        radial-gradient(circle at 50% 100%, #0284c7 0%, transparent 55%),
+        linear-gradient(180deg, #071d3a 0%, #031024 100%);
     background-attachment: fixed;
 }
 
 .app-container {
     width: 100%;
     max-width: 480px;
-    background: rgba(18, 18, 22, 0.95);
+    background: linear-gradient(180deg, rgba(8, 29, 58, 0.97) 0%, rgba(5, 19, 39, 0.98) 100%);
     min-height: 100vh;
     display: flex;
     flex-direction: column;
     position: relative;
     padding-bottom: 30px;
-    box-shadow: 0 0 60px rgba(255, 221, 0, 0.15), 0 0 40px rgba(0, 0, 0, 0.9);
-    border-left: 1px solid rgba(255, 221, 0, 0.1);
-    border-right: 1px solid rgba(255, 221, 0, 0.1);
+    box-shadow: 0 0 70px rgba(0, 190, 255, 0.35), 0 0 50px rgba(0, 0, 0, 0.9);
+    border-left: 1px solid rgba(56, 189, 248, 0.35);
+    border-right: 1px solid rgba(56, 189, 248, 0.35);
 }
 
-/* Yandex Pro Vibrant Header */
+/* Vibrant Sky-Blue Header */
 .app-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 16px 20px;
-    background: rgba(20, 20, 26, 0.92);
+    background: rgba(10, 34, 68, 0.94);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
-    border-bottom: 2px solid rgba(255, 221, 0, 0.25);
+    border-bottom: 2px solid rgba(0, 229, 255, 0.45);
     position: sticky;
     top: 0;
     z-index: 100;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 6px 24px rgba(0, 100, 255, 0.3);
 }
 
 .user-badge {
