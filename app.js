@@ -2220,17 +2220,17 @@ function renderKpiCharts(leaderboard) {
                 labels,
                 datasets: [{
                     data: doneData,
-                    backgroundColor: "rgba(56,189,248,0.6)",
-                    borderColor: "rgba(56,189,248,1)",
+                    backgroundColor: "rgba(252,224,0,0.7)",
+                    borderColor: "rgba(252,224,0,1)",
                     borderWidth: 1,
-                    borderRadius: 4,
+                    borderRadius: 6,
                 }]
             },
             options: {
                 plugins: { legend: { display: false } },
                 scales: {
-                    x: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "rgba(255,255,255,0.04)" } },
-                    y: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "rgba(255,255,255,0.04)" } }
+                    x: { ticks: { color: "#9E9EA4", font: { size: 10, weight: "600" } }, grid: { color: "rgba(255,255,255,0.04)" } },
+                    y: { ticks: { color: "#9E9EA4", font: { size: 10 } }, grid: { color: "rgba(255,255,255,0.04)" } }
                 }
             }
         });
@@ -2246,10 +2246,10 @@ function renderKpiCharts(leaderboard) {
                 labels,
                 datasets: [{
                     data: ratingData,
-                    borderColor: "rgba(192,132,252,1)",
-                    backgroundColor: "rgba(192,132,252,0.15)",
-                    pointBackgroundColor: "rgba(192,132,252,1)",
-                    borderWidth: 2,
+                    borderColor: "rgba(43,102,255,1)",
+                    backgroundColor: "rgba(43,102,255,0.15)",
+                    pointBackgroundColor: "rgba(43,102,255,1)",
+                    borderWidth: 2.5,
                     fill: true,
                     tension: 0.4,
                 }]
@@ -2257,8 +2257,8 @@ function renderKpiCharts(leaderboard) {
             options: {
                 plugins: { legend: { display: false } },
                 scales: {
-                    x: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "rgba(255,255,255,0.04)" } },
-                    y: { min: 0, max: 5, ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "rgba(255,255,255,0.04)" } }
+                    x: { ticks: { color: "#9E9EA4", font: { size: 10, weight: "600" } }, grid: { color: "rgba(255,255,255,0.04)" } },
+                    y: { min: 0, max: 5, ticks: { color: "#9E9EA4", font: { size: 10 } }, grid: { color: "rgba(255,255,255,0.04)" } }
                 }
             }
         });
