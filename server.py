@@ -912,9 +912,98 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             "total_users": len(cities_list),
         }
 
+    def get_rich_data(self):
+        # Reads live from 'Rich Байки' worksheet in Google Sheets
+        issued = 5
+        returned = 5
+        in_trip = 37
+        broken = 4
+        date_str = "07.08.2026"
+        total_fleet = 50
+        reasons_str = "ishdan boshadi (1 шт.), berilgan vaqti tugadi (3 шт.), vaqt uzaytirdi (1 шт.)"
+
+        try:
+            client = get_google_sheets_client()
+            if client:
+                ss = client.open_by_key("1Oskxt5oHfO50PDn47I_7rbn4KGfEoy_JcVsn3mBIiyw")
+                rich_ws = None
+                for ws in ss.worksheets():
+                    if "rich" in ws.title.lower():
+                        rich_ws = ws
+                        break
+                if rich_ws:
+                    rows = rich_ws.get_all_values()
+                    if len(rows) > 1:
+                        latest = rows[-1]
+                        if len(latest) > 2 and "." in str(latest[2]):
+                            date_str = str(latest[2]).strip()
+                        if len(latest) > 3:
+                            try: issued = int(str(latest[3]).strip())
+                            except Exception: pass
+                        if len(latest) > 4:
+                            try: returned = int(str(latest[4]).strip())
+                            except Exception: pass
+                        if len(latest) > 5:
+                            try: in_trip = int(str(latest[5]).strip())
+                            except Exception: pass
+                        if len(latest) > 8:
+                            try: broken = int(str(latest[8]).strip())
+                            except Exception: pass
+                        if len(latest) > 9:
+                            reasons_str = str(latest[9]).strip()
+        except Exception as e:
+            logger.error(f"Error reading Rich Bike sheet: {e}")
+
+        on_line = in_trip if in_trip > 0 else issued
+        pct = min(100, round(((on_line + broken) / total_fleet) * 100)) if total_fleet > 0 else 0
+
+        return {
+            "total_rich_fleet": total_fleet,
+            "issued": issued,
+            "returned": returned,
+            "total_in_trip": in_trip,
+            "broken_bikes": broken,
+            "share_on_line": pct,
+            "report_date": date_str,
+            "return_reasons": reasons_str,
+            "cities": [
+                {
+                    "id": 1,
+                    "name": "Ташкент (Rich)",
+                    "total_bikes": total_fleet,
+                    "issued": on_line,
+                    "percent_online": pct,
+                    "broken_bikes": broken,
+                    "report_date": date_str
+                }
+            ],
+            "reports": [
+                {
+                    "id": 1,
+                    "city": "Ташкент (Rich)",
+                    "username": "оператор",
+                    "report_date": date_str,
+                    "issued": issued,
+                    "returned": returned,
+                    "total_in_trip": in_trip,
+                    "broken_bikes": broken,
+                    "comment": reasons_str
+                }
+            ]
+        }
+
+    def get_rich_stats(self):
+        return self.get_rich_data()
+
+    def get_rich_cities(self):
+        return self.get_rich_data().get("cities", [])
+
+    def get_rich_reports(self):
+        return self.get_rich_data().get("reports", [])
+
     def get_cities_data(self):
         default_cities_fallback = [
-            {"id": 1, "name": "Ташкент", "total_bikes": 50, "has_bike_types": 0},
+            {"id": 1, "name": "Ташкент", "total_bikes": 1670, "has_bike_types": 0},
             {"id": 2, "name": "Самарканд", "total_bikes": 200, "has_bike_types": 0},
             {"id": 3, "name": "Фергана", "total_bikes": 80, "has_bike_types": 0},
             {"id": 4, "name": "Андижан", "total_bikes": 50, "has_bike_types": 0},
@@ -949,63 +1038,56 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         if now_time - BIKE_SHEETS_CACHE["timestamp"] < 15 and BIKE_SHEETS_CACHE["data"]:
             sheet_reports = BIKE_SHEETS_CACHE["data"]
         else:
-            creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
-            if creds_json_env:
-                try:
-                    import gspread
-                    from google.oauth2.service_account import Credentials
-                    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-                    s_clean = creds_json_env.strip().strip("'").strip('"')
-                    info = json.loads(s_clean)
-                    if isinstance(info.get("private_key"), str):
-                        info["private_key"] = info["private_key"].replace("\\n", "\n")
-                    creds = Credentials.from_service_account_info(info, scopes=scopes)
-                    client = gspread.authorize(creds)
+            try:
+                client = get_google_sheets_client()
+                if client:
                     spreadsheet = client.open_by_key("1Oskxt5oHfO50PDn47I_7rbn4KGfEoy_JcVsn3mBIiyw")
                     for ws in spreadsheet.worksheets():
-                        title = ws.title
-                        city_name = title.replace("Байки", "").strip() if "Байки" in title else title.strip()
-                        if not city_name:
-                            continue
+                        title = ws.title.strip()
                         rows = ws.get_all_values()
                         if len(rows) > 1:
                             latest = rows[-1]
-                            is_new_format = (len(latest) >= 12 and not str(latest[0]).strip().startswith("202"))
+                            headers = [str(h).strip() for h in rows[0]]
+                            
+                            iss_num = 0
+                            brok_num = 0
+                            date_val = ""
+                            
+                            # Detect date
+                            for cell_val in latest:
+                                cv = str(cell_val).strip()
+                                if "." in cv and len(cv) == 10:
+                                    date_val = cv
+                                    break
+                            if not date_val and len(latest) > 2:
+                                date_val = str(latest[2]).strip()
 
-                            if is_new_format:
-                                issued_val = latest[5] if len(latest) > 5 else "0"
-                                broken_val = latest[8] if len(latest) > 8 else "0"
-                                date_val = latest[2] if len(latest) > 2 else ""
-                            else:
-                                headers = [str(h).strip() for h in rows[0]]
-                                iss_idx = headers.index("В поездке") if "В поездке" in headers else (headers.index("Всего на линии") if "Всего на линии" in headers else 4)
-                                brok_idx = headers.index("Сломанные") if "Сломанные" in headers else (headers.index("Сломанные байки") if "Сломанные байки" in headers else 6)
-                                date_idx = headers.index("Дата отчета") if "Дата отчета" in headers else (headers.index("Дата") if "Дата" in headers else 1)
+                            # Detect numbers from columns
+                            if len(latest) >= 9:
+                                try:
+                                    iss_num = int(str(latest[5]).strip())
+                                except Exception:
+                                    try:
+                                        iss_num = int(str(latest[3]).strip())
+                                    except Exception:
+                                        iss_num = 0
+                                try:
+                                    brok_num = int(str(latest[8]).strip())
+                                except Exception:
+                                    brok_num = 0
 
-                                issued_val = latest[iss_idx] if len(latest) > iss_idx else "0"
-                                broken_val = latest[brok_idx] if len(latest) > brok_idx else "0"
-                                date_val = latest[date_idx] if len(latest) > date_idx else ""
-
-                            try:
-                                iss_num = int(issued_val)
-                            except (ValueError, TypeError):
-                                iss_num = 0
-                            try:
-                                brok_num = int(broken_val)
-                            except (ValueError, TypeError):
-                                brok_num = 0
-
-                            sheet_reports[city_name.lower()] = {
+                            sheet_reports[title.lower()] = {
+                                "title": title,
                                 "issued": iss_num,
                                 "broken": brok_num,
                                 "report_date": date_val
                             }
                     BIKE_SHEETS_CACHE["data"] = sheet_reports
                     BIKE_SHEETS_CACHE["timestamp"] = now_time
-                except Exception as e:
-                    logger.error(f"Failed to fetch bike reports from Google Sheets: {e}")
-                    if BIKE_SHEETS_CACHE["data"]:
-                        sheet_reports = BIKE_SHEETS_CACHE["data"]
+            except Exception as e:
+                logger.error(f"Failed to fetch bike reports from Google Sheets: {e}")
+                if BIKE_SHEETS_CACHE["data"]:
+                    sheet_reports = BIKE_SHEETS_CACHE["data"]
 
         result = []
         for r in raw_rows:

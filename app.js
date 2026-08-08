@@ -709,15 +709,17 @@ async function updateDashboardView() {
                 </div>
             `;
         } else if (currentBikesSubCategory === "rich") {
-            let totalRichFleet = 350;
-            let activeBots = 3;
+            let totalRichFleet = 50;
+            let shareOnLine = 82;
+            let brokenBikes = 4;
 
             let richCitiesHTML = "";
             try {
                 const resStats = await fetch("/api/rich/stats");
                 const stats = await resStats.json();
-                totalRichFleet = stats.total_rich_fleet || 350;
-                activeBots = stats.active_rich_bots || 3;
+                totalRichFleet = stats.total_rich_fleet || 50;
+                shareOnLine = stats.share_on_line || 82;
+                brokenBikes = stats.broken_bikes || 4;
 
                 const resCities = await fetch("/api/rich/cities");
                 let cities = await resCities.json();
@@ -766,6 +768,27 @@ async function updateDashboardView() {
             }
 
             container.innerHTML = `
+                <div class="stats-grid" style="margin-top:16px; margin-bottom:16px;">
+                    <div class="stat-card gradient-blue">
+                        <div class="stat-icon"><b style="color:#f97316;">R</b></div>
+                        <div class="stat-val">${totalRichFleet.toLocaleString("ru-RU")}</div>
+                        <div class="stat-lbl">Всего байков Rich</div>
+                    </div>
+                    <div class="stat-card gradient-emerald">
+                        <div class="stat-icon">📊</div>
+                        <div class="stat-val">${shareOnLine}%</div>
+                        <div class="stat-lbl">Доля на линии</div>
+                    </div>
+                    <div class="stat-card gradient-amber" style="grid-column: span 2; border: 1px solid rgba(245,158,11,0.4);">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div class="stat-icon">🛠</div>
+                            <span class="badge" style="background:rgba(245,158,11,0.2); color:#f59e0b; border-color:#f59e0b; font-size:10px;">Парк Rich</span>
+                        </div>
+                        <div class="stat-val" style="color:#f59e0b; font-size:26px; font-weight:700; margin-top:4px;">${brokenBikes}</div>
+                        <div class="stat-lbl">Байков в ремзоне / на сервисе</div>
+                    </div>
+                </div>
+
                 <div class="card-box" style="margin-bottom:16px;">
                     <div class="card-header" style="margin-bottom:12px;">
                         <h4>🏙 Города и сервисы Rich</h4>
