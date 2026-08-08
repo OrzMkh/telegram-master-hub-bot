@@ -916,12 +916,166 @@ function switchTab(targetTab) {
             loadTasksData();
         }
     }
+    if (targetTab === "warehouse") loadWarehouseData();
     if (targetTab === "employees") loadUsersData();
     if (targetTab === "payroll") loadPayrollData();
     if (targetTab === "bots") loadBotsData();
 }
 
 window.switchTab = switchTab;
+
+// ═══════════════════════════════════════════════════════
+// 📦 WAREHOUSE & SPARE PARTS MODULE (РЕМЗОНА)
+// ═══════════════════════════════════════════════════════
+
+let localWarehouseCache = [];
+let currentWarehouseFilter = "all";
+
+async function loadWarehouseData() {
+    const list = document.getElementById("warehouseList");
+    if (list) list.innerHTML = `<div class="loading-spinner">Загрузка склада запчастей...</div>`;
+
+    try {
+        const res = await fetch("/api/warehouse");
+        const data = await res.json();
+        localWarehouseCache = data.items || [];
+        
+        const elTotal = document.getElementById("warehouseStatTotal");
+        const elLow = document.getElementById("warehouseStatLow");
+        if (elTotal) elTotal.textContent = `${(data.stats?.total_items || 0).toLocaleString()} шт`;
+        if (elLow) elLow.textContent = `${data.stats?.low_stock || 0} поз.`;
+
+        renderWarehouseList();
+    } catch (e) {
+        console.error("loadWarehouseData error:", e);
+        if (list) list.innerHTML = `<div class="muted-text text-center">Ошибка загрузки склада</div>`;
+    }
+}
+
+function setWarehouseFilter(filter) {
+    currentWarehouseFilter = filter;
+    ["btnWhFilterAll", "btnWhFilterBatteries", "btnWhFilterTires", "btnWhFilterBrakes", "btnWhFilterElectro", "btnWhFilterLow"].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.classList.remove("active");
+    });
+    if (filter === "all") document.getElementById("btnWhFilterAll")?.classList.add("active");
+    if (filter === "Батареи") document.getElementById("btnWhFilterBatteries")?.classList.add("active");
+    if (filter === "Резина & Колёса") document.getElementById("btnWhFilterTires")?.classList.add("active");
+    if (filter === "Тормозная система") document.getElementById("btnWhFilterBrakes")?.classList.add("active");
+    if (filter === "Электроника") document.getElementById("btnWhFilterElectro")?.classList.add("active");
+    if (filter === "low") document.getElementById("btnWhFilterLow")?.classList.add("active");
+
+    renderWarehouseList();
+}
+
+function renderWarehouseList() {
+    const list = document.getElementById("warehouseList");
+    if (!list) return;
+
+    let items = [...localWarehouseCache];
+    if (currentWarehouseFilter === "low") {
+        items = items.filter(i => i.stock_qty <= i.min_threshold);
+    } else if (currentWarehouseFilter !== "all") {
+        items = items.filter(i => i.category === currentWarehouseFilter);
+    }
+
+    const countBadge = document.getElementById("warehouseCountBadge");
+    if (countBadge) countBadge.textContent = `Позиций: ${items.length}`;
+
+    if (items.length === 0) {
+        list.innerHTML = `<div class="muted-text text-center" style="padding:20px;">Позиций в данной категории не найдено</div>`;
+        return;
+    }
+
+    list.innerHTML = items.map(item => {
+        const isLow = item.stock_qty <= item.min_threshold;
+        const statusBadge = isLow 
+            ? `<span class="badge-status closed" style="font-size:9px;">⚠️ Дефицит (&le;${item.min_threshold} ${item.unit})</span>`
+            : `<span class="badge-status online" style="font-size:9px;">✅ В наличии</span>`;
+
+        return `
+            <div class="city-card" style="margin-bottom:8px; border-left:3px solid ${isLow ? 'var(--yandex-red)' : 'var(--yandex-mint)'};">
+                <div class="city-header">
+                    <div>
+                        <span class="city-name" style="font-size:12px; font-weight:800;">${item.item_name}</span>
+                        <div style="font-size:9.5px; color:var(--text-muted); margin-top:2px;">
+                            🏷 ${item.category} • 🏙 ${item.city || 'Ташкент'}
+                        </div>
+                    </div>
+                    ${statusBadge}
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; background:var(--card-bg-elevated); padding:8px 10px; border-radius:var(--radius-sm); margin-top:6px;">
+                    <div>
+                        <div style="font-size:9px; color:var(--text-muted);">Остаток на складе:</div>
+                        <div style="font-size:15px; font-weight:800; color:${isLow ? 'var(--yandex-red)' : 'var(--yandex-yellow)'};">
+                            ${item.stock_qty} <span style="font-size:10px; color:var(--text-secondary);">${item.unit}</span>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:6px;">
+                        <button onclick="adjustWarehouseStock(${item.id}, -1)" class="btn-sm" style="background:rgba(252,63,29,0.2); color:var(--yandex-red); border-color:var(--yandex-red); font-weight:800; cursor:pointer;" title="Списать 1 в ремзону">
+                            ➖ 1 (В ремзону)
+                        </button>
+                        <button onclick="adjustWarehouseStock(${item.id}, 1)" class="btn-sm" style="background:rgba(16,185,129,0.2); color:var(--yandex-mint); border-color:var(--yandex-mint); font-weight:800; cursor:pointer;" title="Пополнить 1 на склад">
+                            ➕ 1 (Приход)
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join("");
+}
+
+async function adjustWarehouseStock(itemId, delta) {
+    try {
+        await fetch("/api/warehouse/adjust", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ item_id: itemId, delta: delta })
+        });
+        loadWarehouseData();
+    } catch (e) {
+        console.error("adjustWarehouseStock error:", e);
+    }
+}
+
+function openAddWarehouseItemModal() {
+    document.getElementById("addWarehouseItemModal")?.classList.remove("hidden");
+}
+
+function closeAddWarehouseItemModal() {
+    document.getElementById("addWarehouseItemModal")?.classList.add("hidden");
+}
+
+async function saveAddWarehouseItemModal() {
+    const name = document.getElementById("inputWhName")?.value || "";
+    const category = document.getElementById("selectWhCategory")?.value || "Батареи";
+    const qty = parseInt(document.getElementById("inputWhQty")?.value || "0", 10);
+    const unit = document.getElementById("inputWhUnit")?.value || "шт";
+    const minThreshold = parseInt(document.getElementById("inputWhMin")?.value || "10", 10);
+    const city = document.getElementById("inputWhCity")?.value || "Ташкент";
+
+    if (!name.trim()) return;
+
+    try {
+        await fetch("/api/warehouse/add", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ item_name: name, category, stock_qty: qty, unit, min_threshold: minThreshold, city })
+        });
+        closeAddWarehouseItemModal();
+        loadWarehouseData();
+    } catch (e) {
+        console.error("saveAddWarehouseItemModal error:", e);
+        closeAddWarehouseItemModal();
+    }
+}
+
+window.loadWarehouseData = loadWarehouseData;
+window.setWarehouseFilter = setWarehouseFilter;
+window.adjustWarehouseStock = adjustWarehouseStock;
+window.openAddWarehouseItemModal = openAddWarehouseItemModal;
+window.closeAddWarehouseItemModal = closeAddWarehouseItemModal;
+window.saveAddWarehouseItemModal = saveAddWarehouseItemModal;
 
 let currentTaskSubtab = "list";
 

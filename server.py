@@ -666,6 +666,8 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 "fleet_users_count": len(fleet_users),
                 "fleet_users": fleet_users,
             })
+        elif path == "/api/warehouse":
+            self.send_json_response(self.get_warehouse_inventory())
         elif path == "/api/rich/cities":
             self.send_json_response(self.get_rich_cities())
         elif path == "/api/rich/reports":
@@ -777,6 +779,26 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 self.send_json_response({"status": "ok"})
             else:
                 self.send_json_response({"error": "Task ID required"}, status=400)
+        elif path == "/api/warehouse/adjust":
+            item_id = payload.get("item_id")
+            delta = int(payload.get("delta", 0))
+            if item_id:
+                self.adjust_warehouse_stock(item_id, delta)
+                self.send_json_response({"status": "ok"})
+            else:
+                self.send_json_response({"error": "Item ID required"}, status=400)
+        elif path == "/api/warehouse/add":
+            name = payload.get("item_name", "").strip()
+            cat = payload.get("category", "Запчасти").strip()
+            qty = int(payload.get("stock_qty", 0))
+            unit = payload.get("unit", "шт").strip()
+            min_t = int(payload.get("min_threshold", 10))
+            city = payload.get("city", "Ташкент").strip()
+            if name:
+                self.add_warehouse_item(name, cat, qty, unit, min_t, city)
+                self.send_json_response({"status": "ok"})
+            else:
+                self.send_json_response({"error": "Item name required"}, status=400)
         elif path == "/api/rich/cities/add":
             name = payload.get("name", "").strip()
             total_bikes = payload.get("total_bikes", 50)
@@ -2006,6 +2028,60 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
 
         return reports
 
+    def get_warehouse_inventory(self):
+        if not os.path.exists(BIKES_DB_PATH):
+            return {"items": [], "stats": {"total_items": 0, "low_stock": 0, "categories": 0, "sku_count": 0}}
+        try:
+            conn = sqlite3.connect(BIKES_DB_PATH)
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+            c.execute("SELECT id, item_name, category, stock_qty, unit, min_threshold, city, updated_at FROM warehouse_inventory ORDER BY id ASC")
+            items = [dict(r) for r in c.fetchall()]
+            conn.close()
+
+            total_qty = sum(i["stock_qty"] for i in items)
+            low_stock = sum(1 for i in items if i["stock_qty"] <= i["min_threshold"])
+            cats = len(set(i["category"] for i in items))
+            return {
+                "items": items,
+                "stats": {
+                    "total_items": total_qty,
+                    "low_stock": low_stock,
+                    "categories": cats,
+                    "sku_count": len(items)
+                }
+            }
+        except Exception as e:
+            logger.error(f"get_warehouse_inventory error: {e}")
+            return {"items": [], "stats": {"total_items": 0, "low_stock": 0, "categories": 0, "sku_count": 0}}
+
+    def adjust_warehouse_stock(self, item_id: int, delta: int):
+        if not os.path.exists(BIKES_DB_PATH):
+            return
+        try:
+            conn = sqlite3.connect(BIKES_DB_PATH)
+            c = conn.cursor()
+            now_dt = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            c.execute("UPDATE warehouse_inventory SET stock_qty = MAX(0, stock_qty + ?), updated_at = ? WHERE id = ?", (delta, now_dt, item_id))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"adjust_warehouse_stock error: {e}")
+
+    def add_warehouse_item(self, name: str, category: str, qty: int, unit: str, min_thresh: int, city: str):
+        if not os.path.exists(BIKES_DB_PATH):
+            return
+        try:
+            conn = sqlite3.connect(BIKES_DB_PATH)
+            c = conn.cursor()
+            now_dt = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            c.execute("INSERT INTO warehouse_inventory (item_name, category, stock_qty, unit, min_threshold, city, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                      (name, category, qty, unit, min_thresh, city, now_dt))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"add_warehouse_item error: {e}")
+
     def get_rich_stats(self):
         tot_rich_fleet = 0
         active_rich_bots = 0
@@ -2332,6 +2408,33 @@ def init_local_master_dbs():
                 created_at TEXT NOT NULL
             )
         """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS warehouse_inventory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_name TEXT NOT NULL,
+                category TEXT NOT NULL,
+                stock_qty INTEGER DEFAULT 0,
+                unit TEXT DEFAULT 'шт',
+                min_threshold INTEGER DEFAULT 10,
+                city TEXT DEFAULT 'Ташкент',
+                updated_at TEXT
+            )
+        """)
+        c.execute("SELECT COUNT(*) FROM warehouse_inventory")
+        if c.fetchone()[0] == 0:
+            now_dt = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            default_warehouse = [
+                ("Аккумуляторы 60V 20Ah (FlitGo)", "Батареи", 48, "шт", 15, "Ташкент", now_dt),
+                ("Аккумуляторы 48V 15Ah (Rich)", "Батареи", 22, "шт", 10, "Ташкент", now_dt),
+                ("Бескамерные покрышки 14x2.50", "Резина & Колёса", 65, "шт", 20, "Ташкент", now_dt),
+                ("Колодки тормозные гидравлические", "Тормозная система", 140, "компл", 30, "Ташкент", now_dt),
+                ("Контроллеры мотора 60V 35A", "Электроника", 19, "шт", 8, "Ташкент", now_dt),
+                ("GPS-трекеры FlitGo Live", "Телематика", 34, "шт", 12, "Ташкент", now_dt),
+                ("Зарядные станции 5A Fast Charge", "Зарядка", 16, "шт", 5, "Ташкент", now_dt),
+                ("Зеркала & Ручки газа", "Аксессуары", 55, "шт", 15, "Ташкент", now_dt),
+            ]
+            c.executemany("INSERT INTO warehouse_inventory (item_name, category, stock_qty, unit, min_threshold, city, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)", default_warehouse)
+
         default_cities = [
             ("Ташкент", 1670, 0),
             ("Самарканд", 200, 0),

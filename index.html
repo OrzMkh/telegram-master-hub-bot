@@ -42,6 +42,10 @@
                     <span class="tab-icon">📋</span>
                     <span class="tab-label">Задачи</span>
                 </button>
+                <button class="tab-btn" data-tab="warehouse" onclick="switchTab('warehouse')">
+                    <span class="tab-icon">📦</span>
+                    <span class="tab-label">Склад & ТО</span>
+                </button>
                 <button class="tab-btn" data-tab="employees" onclick="switchTab('employees')">
                     <span class="tab-icon">👥</span>
                     <span class="tab-label">Доступы</span>
@@ -240,6 +244,54 @@
                             </div>
                             <canvas id="kpiRatingChart" height="130"></canvas>
                         </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3.5: WAREHOUSE & REPAIR INVENTORY -->
+            <section id="tab-warehouse" class="tab-content">
+                <div class="section-title">
+                    <h3>📦 Склад & Ремзона (Запчасти)</h3>
+                    <button class="btn-sm btn-primary-sm" onclick="openAddWarehouseItemModal()">➕ Добавить позицию</button>
+                </div>
+
+                <!-- Warehouse KPI Stats Row -->
+                <div class="stats-grid">
+                    <div class="stat-card gradient-blue">
+                        <div class="stat-icon">📦</div>
+                        <div class="stat-val" id="warehouseStatTotal">—</div>
+                        <div class="stat-lbl">Всего деталей на складе</div>
+                    </div>
+                    <div class="stat-card gradient-amber">
+                        <div class="stat-icon">⚠️</div>
+                        <div class="stat-val" id="warehouseStatLow" style="color:var(--yandex-red);">—</div>
+                        <div class="stat-lbl">Позиций в дефиците</div>
+                    </div>
+                </div>
+
+                <!-- Warehouse Filters -->
+                <div class="card-box" style="margin-bottom:12px; padding:10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <label style="font-size:10px; color:var(--text-muted); font-weight:700;">🔍 Фильтр по типу запчастей:</label>
+                        <span id="warehouseCountBadge" class="badge" style="font-size:9.5px;">Позиций: 0</span>
+                    </div>
+                    <div style="display:flex; gap:5px; overflow-x:auto; padding-bottom:4px;">
+                        <button class="preset-pill active" id="btnWhFilterAll" onclick="setWarehouseFilter('all')">Все</button>
+                        <button class="preset-pill" id="btnWhFilterBatteries" onclick="setWarehouseFilter('Батареи')">🔋 Батареи</button>
+                        <button class="preset-pill" id="btnWhFilterTires" onclick="setWarehouseFilter('Резина & Колёса')">🛞 Резина</button>
+                        <button class="preset-pill" id="btnWhFilterBrakes" onclick="setWarehouseFilter('Тормозная система')">🛑 Тормоза</button>
+                        <button class="preset-pill" id="btnWhFilterElectro" onclick="setWarehouseFilter('Электроника')">⚡️ Электроника</button>
+                        <button class="preset-pill" id="btnWhFilterLow" onclick="setWarehouseFilter('low')">⚠️ Дефицит</button>
+                    </div>
+                </div>
+
+                <!-- Warehouse Inventory List -->
+                <div class="card-box">
+                    <div class="card-header">
+                        <h4>📋 Наличие деталей и учёт ремзоны</h4>
+                    </div>
+                    <div id="warehouseList" class="cities-grid">
+                        <div class="loading-spinner">Загрузка склада запчастей...</div>
                     </div>
                 </div>
             </section>
@@ -523,6 +575,36 @@
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="btnCancelAddRichCity" onclick="closeAddRichCityModal()">Отмена</button>
                 <button class="btn btn-primary" id="btnSaveAddRichCity" onclick="saveAddRichCityModal()">Добавить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for adding new Warehouse item -->
+    <div id="addWarehouseItemModal" class="modal-backdrop hidden">
+        <div class="modal-card">
+            <h3>📦 Добавить позицию на склад</h3>
+            <p class="muted-text">Введите наименование, категорию и начальный остаток:</p>
+            <input type="text" id="inputWhName" placeholder="Наименование (например: Аккумуляторы 60V)" class="form-input">
+            <select id="selectWhCategory" class="form-input">
+                <option value="Батареи">🔋 Категория: Батареи</option>
+                <option value="Резина & Колёса">🛞 Категория: Резина & Колёса</option>
+                <option value="Тормозная система">🛑 Категория: Тормозная система</option>
+                <option value="Электроника">⚡️ Категория: Электроника</option>
+                <option value="Телематика">📡 Категория: Телематика & GPS</option>
+                <option value="Зарядка">🔌 Категория: Зарядные устройства</option>
+                <option value="Аксессуары">🛠 Категория: Аксессуары</option>
+            </select>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                <input type="number" id="inputWhQty" min="1" value="20" placeholder="Количество..." class="form-input">
+                <input type="text" id="inputWhUnit" value="шт" placeholder="Ед. изм. (шт/компл)" class="form-input">
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                <input type="number" id="inputWhMin" min="1" value="10" placeholder="Мин. порог дефицита..." class="form-input">
+                <input type="text" id="inputWhCity" value="Ташкент" placeholder="Склад (Город)" class="form-input">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeAddWarehouseItemModal()">Отмена</button>
+                <button class="btn btn-primary" onclick="saveAddWarehouseItemModal()">💾 Сохранить</button>
             </div>
         </div>
     </div>
