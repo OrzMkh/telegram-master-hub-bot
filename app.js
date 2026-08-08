@@ -1420,7 +1420,195 @@ async function loadRichData() {
     }
 }
 
+function updatePayrollCalculator() {
+    const advInput = document.getElementById("calcAdvance");
+    const salInput = document.getElementById("calcSalary");
+    const netEl = document.getElementById("calcResultNet");
+    const taxEl = document.getElementById("calcResultTax");
+    const fotEl = document.getElementById("calcResultFot");
+
+    if (!advInput || !salInput) return;
+
+    const advance = parseFloat(advInput.value) || 0;
+    const salary = parseFloat(salInput.value) || 0;
+    const totalNet = advance + salary;
+
+    // Formula per ТК РУз: ROUND((Аванс + ЗП) / 0.88 * 0.24, 0)
+    const grossBase = totalNet > 0 ? (totalNet / 0.88) : 0;
+    const tax24 = Math.round(grossBase * 0.24);
+    const totalFot = Math.round(totalNet + tax24);
+
+    if (netEl) netEl.textContent = totalNet.toLocaleString("ru-RU") + " сум";
+    if (taxEl) taxEl.textContent = tax24.toLocaleString("ru-RU") + " сум";
+    if (fotEl) fotEl.textContent = totalFot.toLocaleString("ru-RU") + " сум";
+}
+
+function renderExcelSummary(data) {
+    const box = document.getElementById("excelSummaryBox");
+    if (!box) return;
+
+    box.classList.remove("hidden");
+    box.style.display = "block";
+
+    const s = data.summary || {};
+    const advEl = document.getElementById("excelTotalAdvance");
+    const netEl = document.getElementById("excelTotalNet");
+    const taxEl = document.getElementById("excelTotalTax");
+    const fotEl = document.getElementById("excelTotalFot");
+    const tableEl = document.getElementById("excelEmployeesTable");
+
+    if (advEl) advEl.textContent = (s.total_advance || 0).toLocaleString("ru-RU") + " сум";
+    if (netEl) netEl.textContent = (s.total_net || 0).toLocaleString("ru-RU") + " сум";
+    if (taxEl) taxEl.textContent = (s.total_tax || 0).toLocaleString("ru-RU") + " сум";
+    if (fotEl) fotEl.textContent = (s.total_fot || 0).toLocaleString("ru-RU") + " сум";
+
+    const emps = data.employees || [];
+    if (tableEl) {
+        if (emps.length === 0) {
+            tableEl.innerHTML = `<div class="muted-text text-center" style="padding:10px;">Сотрудники не найдены</div>`;
+        } else {
+            tableEl.innerHTML = emps.map((emp, i) => `
+                <div class="report-item" style="margin-bottom:8px; padding:10px; background:rgba(30,41,59,0.8); border-radius:10px; border:1px solid rgba(255,255,255,0.06);">
+                    <div class="rep-header" style="display:flex; justify-content:space-between; align-items:center;">
+                        <span class="rep-city" style="font-weight:700; color:var(--text-main); font-size:13px;">${i + 1}. 👤 ${emp.name}</span>
+                        <span class="badge" style="font-size:10px; color:var(--accent-cyan);">${emp.role || "Сотрудник"} • Смен: ${emp.exact_shifts}</span>
+                    </div>
+                    <div class="rep-details" style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px; font-size:12px;">
+                        <span>💵 Аванс: <b>${(emp.advance || 0).toLocaleString()} сум</b></span>
+                        <span>💳 На руки (ЗП): <b>${(emp.net_pay || 0).toLocaleString()} сум</b></span>
+                        <span>🏛 Налог 24%: <b style="color:#f59e0b">${(emp.tax || 0).toLocaleString()} сум</b></span>
+                        <span>💼 ФОТ: <b style="color:var(--accent-purple)">${(emp.fot || 0).toLocaleString()} сум</b></span>
+                    </div>
+                </div>
+            `).join("");
+        }
+    }
+}
+
+function initPayrollModule() {
+    const advInput = document.getElementById("calcAdvance");
+    const salInput = document.getElementById("calcSalary");
+    const empInput = document.getElementById("calcEmpName");
+    const saveBtn = document.getElementById("btnSavePayrollEntry");
+    const uploadTriggerBtn = document.getElementById("btnTriggerExcelUpload");
+    const fileInput = document.getElementById("excelFileInput");
+    const downloadBtn = document.getElementById("btnDownloadExcelReport");
+    const telegramBtn = document.getElementById("btnSendTelegramExcelReport");
+
+    if (advInput) {
+        ["input", "change", "keyup", "paste"].forEach(evt => {
+            advInput.addEventListener(evt, updatePayrollCalculator);
+        });
+    }
+    if (salInput) {
+        ["input", "change", "keyup", "paste"].forEach(evt => {
+            salInput.addEventListener(evt, updatePayrollCalculator);
+        });
+    }
+
+    // Run initial calculation right away
+    updatePayrollCalculator();
+
+    // Save calculation to payroll ledger
+    if (saveBtn && !saveBtn.dataset.bound) {
+        saveBtn.dataset.bound = "true";
+        saveBtn.addEventListener("click", async () => {
+            const empName = (empInput?.value || "").trim() || "Сотрудник";
+            const advance = parseFloat(advInput?.value) || 0;
+            const salary = parseFloat(salInput?.value) || 0;
+
+            try {
+                saveBtn.disabled = true;
+                saveBtn.textContent = "⏳ Сохранение...";
+                const res = await fetch("/api/payroll/add", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ employee_name: empName, advance: advance, salary: salary })
+                });
+                const data = await res.json();
+                if (data.status === "ok") {
+                    showToast("✅ Расчёт сохранён в ведомость!");
+                    loadPayrollData();
+                } else {
+                    showToast("❌ Ошибка при сохранении");
+                }
+            } catch (err) {
+                console.error("Save payroll error:", err);
+                showToast("❌ Ошибка соединения");
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = "💾 Сохранить расчёт в ведомость";
+            }
+        });
+    }
+
+    // Excel schedule upload
+    if (uploadTriggerBtn && fileInput && !uploadTriggerBtn.dataset.bound) {
+        uploadTriggerBtn.dataset.bound = "true";
+        uploadTriggerBtn.addEventListener("click", () => fileInput.click());
+        fileInput.addEventListener("change", async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            uploadTriggerBtn.textContent = "⏳ Загрузка...";
+            try {
+                const reader = new FileReader();
+                reader.onload = async (evt) => {
+                    const b64 = evt.target.result.split(",")[1];
+                    const res = await fetch("/api/payroll/upload_schedule", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ file_b64: b64, filename: file.name })
+                    });
+                    const data = await res.json();
+                    if (data.status === "ok" || data.summary) {
+                        showToast("✅ График успешно разобран!");
+                        renderExcelSummary(data);
+                    } else {
+                        showToast("❌ " + (data.error || "Ошибка парсинга"));
+                    }
+                    uploadTriggerBtn.textContent = "📥 Загрузить График (.xlsx)";
+                };
+                reader.readAsDataURL(file);
+            } catch (err) {
+                console.error("Excel upload error:", err);
+                showToast("❌ Ошибка загрузки файла");
+                uploadTriggerBtn.textContent = "📥 Загрузить График (.xlsx)";
+            }
+        });
+    }
+
+    // Download & Telegram buttons
+    if (downloadBtn && !downloadBtn.dataset.bound) {
+        downloadBtn.dataset.bound = "true";
+        downloadBtn.addEventListener("click", () => {
+            window.location.href = "/api/payroll/download_excel";
+        });
+    }
+    if (telegramBtn && !telegramBtn.dataset.bound) {
+        telegramBtn.dataset.bound = "true";
+        telegramBtn.addEventListener("click", async () => {
+            telegramBtn.disabled = true;
+            telegramBtn.textContent = "⏳ Отправка...";
+            try {
+                const res = await fetch("/api/payroll/send_telegram", { method: "POST" });
+                const d = await res.json();
+                if (d.status === "ok") {
+                    showToast("📲 Отчёт отправлен в Telegram!");
+                } else {
+                    showToast("❌ " + (d.error || "Ошибка отправки"));
+                }
+            } catch (err) {
+                showToast("❌ Ошибка соединения");
+            } finally {
+                telegramBtn.disabled = false;
+                telegramBtn.textContent = "📲 В Telegram";
+            }
+        });
+    }
+}
+
 async function loadPayrollData() {
+    initPayrollModule();
     const payrollList = document.getElementById("payrollList");
     if (!payrollList) return;
     try {
@@ -1897,6 +2085,7 @@ window.saveTabOrderFromModal = saveTabOrderFromModal;
 
 document.addEventListener("DOMContentLoaded", () => {
     applySavedTabOrder();
+    initPayrollModule();
     // Auto-refresh live data every 15 seconds
     setInterval(() => {
         if (typeof refreshCurrentTabData === "function") {
