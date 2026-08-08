@@ -2388,6 +2388,12 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         except Exception:
             return default
 
+    MONTH_MAP = {
+        "январ": 1, "феврал": 2, "март": 3, "апрел": 4,
+        "май": 5, "мая": 5, "июн": 6, "июл": 7,
+        "август": 8, "сентябр": 9, "октябр": 10, "ноябр": 11, "декабр": 12
+    }
+
     def get_schedule_months(self):
         try:
             gc = self._gs_client()
@@ -2395,35 +2401,43 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 return {"error": "Google Sheets недоступен", "months": []}
             sh = gc.open_by_key(self.SPREADSHEET_ID)
             months = []
-            
-            # Prioritize 2026, then 2025, then 2024
-            month_sheets = []
-            other_sheets = []
-            
+            import re as _re
+
             for ws in sh.worksheets():
                 title = ws.title.strip()
                 gid = ws.id
-                # Filter out irrelevant helper sheets
                 title_lower = title.lower()
-                if any(x in title_lower for x in ["labourcost", "импорт", "сводная", "учёты"]):
+
+                # 1. Exclude helper and non-schedule sheets
+                if any(h in title_lower for h in ["labourcost", "импорт", "сводная", "учёт", "учет", "отгул", "брак", "отпуск"]):
                     continue
-                if "2026" in title:
-                    month_sheets.insert(0, {"gid": gid, "title": title, "label": title, "year": 2026})
-                elif "2025" in title:
-                    month_sheets.append({"gid": gid, "title": title, "label": title, "year": 2025})
-                elif "2024" in title:
-                    other_sheets.append({"gid": gid, "title": title, "label": title, "year": 2024})
-                else:
-                    other_sheets.append({"gid": gid, "title": title, "label": title, "year": 2020})
 
-            # Place June/July 2026 first
-            sorted_months = sorted(month_sheets, key=lambda m: (
-                0 if "июнь 2026" in m["title"].lower() else (
-                1 if "июль 2026" in m["title"].lower() else (
-                2 if "август 2026" in m["title"].lower() else 10
-            )))) + other_sheets
+                # 2. Strict filter: ONLY sheets from 2026 onwards (2026, 2027, 2028...)
+                year_match = _re.search(r'\b(202[6-9]|20[3-9]\d)\b', title)
+                if not year_match:
+                    continue
+                year = int(year_match.group(1))
 
-            return {"status": "ok", "months": sorted_months}
+                # 3. Detect month number
+                month_num = 0
+                for mk, mv in self.MONTH_MAP.items():
+                    if mk in title_lower:
+                        month_num = mv
+                        break
+
+                months.append({
+                    "gid": gid,
+                    "title": title,
+                    "label": title,
+                    "year": year,
+                    "month": month_num,
+                    "sort_key": year * 100 + month_num
+                })
+
+            # Sort descending: newest month (e.g. August 2026, July 2026, June 2026...) first
+            months.sort(key=lambda s: s["sort_key"], reverse=True)
+
+            return {"status": "ok", "months": months}
         except Exception as e:
             logger.error(f"get_schedule_months error: {e}")
             return {"error": str(e), "months": []}
