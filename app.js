@@ -1069,9 +1069,10 @@ function renderTasksList() {
         tasksList.innerHTML = `<div class="muted-text text-center" style="padding:24px; color:var(--text-muted); font-size:13px;">Задач не найдено</div>`;
     } else {
         tasksList.innerHTML = tasks.map(t => {
-            const isDone = t.status === "Done";
-            const statusClass = isDone ? "closed" : "active";
-            const statusText = isDone ? "Завершено" : "В работе";
+            const isDisputed = t.is_disputed === true || t.status === "Disputed" || (t.rating_comment && t.rating_comment.trim().length > 0 && !t.final_rating);
+            const isDone = t.status === "Done" || isDisputed;
+            const statusClass = isDisputed ? "disputed" : (isDone ? "closed" : "active");
+            const statusText = isDisputed ? "⚖️ Оспорена" : (isDone ? "Завершено" : "В работе");
 
             const priority = t.priority || "Medium";
             let prioBadge = `<span class="badge" style="background:rgba(245,158,11,0.15); color:#f59e0b; border-color:#f59e0b; font-size:10px;">🟡 Средний</span>`;
@@ -1080,7 +1081,26 @@ function renderTasksList() {
 
             const rating = t.rating || 0;
             let ratingHTML = "";
-            if (isDone) {
+            if (isDisputed) {
+                ratingHTML = `
+                    <div style="margin-top:10px; padding:12px; background:rgba(30,41,59,0.95); border-radius:10px; border:1px solid rgba(244,63,94,0.5); text-align:center;">
+                        <div style="font-size:12px; font-weight:700; color:#f43f5e; margin-bottom:4px; display:flex; align-items:center; justify-content:center; gap:4px;">
+                            ⚖️ <span>ОСПОРЕНО ИСПОЛНИТЕЛЕМ:</span>
+                        </div>
+                        <div style="font-size:11px; color:#e2e8f0; font-style:italic; margin-bottom:10px; padding:8px; background:rgba(244,63,94,0.15); border-radius:6px; border:1px solid rgba(244,63,94,0.3);">
+                            💬 "${t.rating_comment || 'Исполнитель запросил пересмотр оценки'}"
+                        </div>
+                        <div style="font-size:12px; font-weight:700; color:#c084fc; margin-bottom:8px;">⭐️ Пересмотрите оценку за выполнение:</div>
+                        <div style="display:flex; justify-content:center; gap:6px;">
+                            <button class="btn-sm" onclick="rateTaskAction('${t.id}', 1, event)" style="background:rgba(244,63,94,0.2); color:#f43f5e; border:1px solid #f43f5e; flex:1; font-weight:700; cursor:pointer;">⭐ 1</button>
+                            <button class="btn-sm" onclick="rateTaskAction('${t.id}', 2, event)" style="background:rgba(245,158,11,0.2); color:#f59e0b; border:1px solid #f59e0b; flex:1; font-weight:700; cursor:pointer;">⭐ 2</button>
+                            <button class="btn-sm" onclick="rateTaskAction('${t.id}', 3, event)" style="background:rgba(234,179,8,0.2); color:#eab308; border:1px solid #eab308; flex:1; font-weight:700; cursor:pointer;">⭐ 3</button>
+                            <button class="btn-sm" onclick="rateTaskAction('${t.id}', 4, event)" style="background:rgba(59,130,246,0.2); color:#3b82f6; border:1px solid #3b82f6; flex:1; font-weight:700; cursor:pointer;">⭐ 4</button>
+                            <button class="btn-sm" onclick="rateTaskAction('${t.id}', 5, event)" style="background:rgba(16,185,129,0.2); color:#10b981; border:1px solid #10b981; flex:1; font-weight:700; cursor:pointer;">⭐ 5</button>
+                        </div>
+                    </div>
+                `;
+            } else if (isDone) {
                 if (rating > 0) {
                     const starsStr = "⭐️".repeat(rating);
                     ratingHTML = `
@@ -1088,30 +1108,6 @@ function renderTasksList() {
                             <div>
                                 <span style="font-size:13px; font-weight:700; color:#c084fc;">⭐️ Оценка руководителя: ${starsStr} (${rating}/5)</span>
                                 ${t.rating_comment ? `<div style="font-size:11px; color:var(--text-muted); margin-top:3px;">💬 "${t.rating_comment}"</div>` : ''}
-                            </div>
-                        </div>
-                    `;
-                } else {
-                    const isDisputed = t.rating_comment && t.rating_comment.includes("Оспаривание");
-                    const disputeHeader = isDisputed ? `
-                        <div style="font-size:12px; font-weight:700; color:#f43f5e; margin-bottom:4px; display:flex; align-items:center; justify-content:center; gap:4px;">
-                            ⚖️ <span>ОСПОРЕНО ИСПОЛНИТЕЛЕМ:</span>
-                        </div>
-                        <div style="font-size:11px; color:#e2e8f0; font-style:italic; margin-bottom:8px; padding:6px; background:rgba(244,63,94,0.15); border-radius:6px; border:1px solid rgba(244,63,94,0.3);">
-                            💬 "${t.rating_comment}"
-                        </div>
-                    ` : '';
-
-                    ratingHTML = `
-                        <div style="margin-top:10px; padding:10px; background:rgba(30,41,59,0.9); border-radius:10px; border:1px solid ${isDisputed ? 'rgba(244,63,94,0.5)' : 'rgba(192,132,252,0.4)'}; text-align:center;">
-                            ${disputeHeader}
-                            <div style="font-size:12px; font-weight:700; color:#c084fc; margin-bottom:8px;">⭐️ ${isDisputed ? 'Пересмотрите оценку за выполнение:' : 'Поставьте оценку за выполнение:'}</div>
-                            <div style="display:flex; justify-content:center; gap:6px;">
-                                <button class="btn-sm" onclick="rateTaskAction('${t.id}', 1, event)" style="background:rgba(244,63,94,0.2); color:#f43f5e; border:1px solid #f43f5e; flex:1; font-weight:700; cursor:pointer;">⭐ 1</button>
-                                <button class="btn-sm" onclick="rateTaskAction('${t.id}', 2, event)" style="background:rgba(245,158,11,0.2); color:#f59e0b; border:1px solid #f59e0b; flex:1; font-weight:700; cursor:pointer;">⭐ 2</button>
-                                <button class="btn-sm" onclick="rateTaskAction('${t.id}', 3, event)" style="background:rgba(234,179,8,0.2); color:#eab308; border:1px solid #eab308; flex:1; font-weight:700; cursor:pointer;">⭐ 3</button>
-                                <button class="btn-sm" onclick="rateTaskAction('${t.id}', 4, event)" style="background:rgba(59,130,246,0.2); color:#3b82f6; border:1px solid #3b82f6; flex:1; font-weight:700; cursor:pointer;">⭐ 4</button>
-                                <button class="btn-sm" onclick="rateTaskAction('${t.id}', 5, event)" style="background:rgba(16,185,129,0.2); color:#10b981; border:1px solid #10b981; flex:1; font-weight:700; cursor:pointer;">⭐ 5</button>
                             </div>
                         </div>
                     `;
