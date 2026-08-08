@@ -1056,11 +1056,11 @@ function renderTasksList() {
 
     // Apply task status filtering
     const filter = window.currentTaskFilter || "all";
-    if (filter === "active") tasks = tasks.filter(t => t.status !== "Done");
-    if (filter === "done") tasks = tasks.filter(t => t.status === "Done");
+    if (filter === "active") tasks = tasks.filter(t => t.status !== "Done" && !t.is_disputed);
+    if (filter === "done") tasks = tasks.filter(t => t.status === "Done" && !t.is_disputed);
     if (filter === "unrated") tasks = tasks.filter(t => t.status === "Done" && (!t.rating || t.rating === 0) && !t.is_disputed);
-    if (filter === "disputed") tasks = tasks.filter(t => t.is_disputed === true || t.status === "Disputed" || t.status === "Оспорена" || (t.rating_comment && t.rating_comment.trim().length > 0));
-    if (filter === "rated") tasks = tasks.filter(t => t.status === "Done" && t.rating > 0 && !t.is_disputed);
+    if (filter === "disputed") tasks = tasks.filter(t => t.is_disputed === true && (!t.final_rating || t.final_rating === 0));
+    if (filter === "rated") tasks = tasks.filter(t => (t.rating > 0 || t.final_rating > 0) && !t.is_disputed);
 
     const countBadge = document.getElementById("taskCountBadge");
     if (countBadge) countBadge.textContent = `Показано: ${tasks.length}`;

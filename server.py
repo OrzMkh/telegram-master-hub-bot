@@ -1143,9 +1143,11 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                         if status_val.strip().lower() in ["удалена", "deleted"]:
                             continue
 
-                        is_disputed = bool(disp_val.strip()) or (status_val.strip().lower() in ["disputed", "оспорена", "оспорено"])
-                        if is_disputed and not final_rat.strip():
+                        is_disputed = (bool(disp_val.strip()) or (status_val.strip().lower() in ["disputed", "оспорена", "оспорено"])) and not bool(final_rat.strip() and final_rat.strip() != "0")
+                        if is_disputed:
                             status_val = "Disputed"
+                        elif final_rat.strip() or init_num > 0:
+                            status_val = "Done"
 
                         clean_id = str(r[id_idx]).replace("#", "").strip() if (len(r) > id_idx and str(r[id_idx]).strip()) else str(i)
                         tasks.append({
@@ -1360,6 +1362,17 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 TASKS_SHEETS_CACHE["timestamp"] = 0
         except Exception as e:
             logger.error(f"Failed to update task rating in Google Sheets: {e}")
+
+        # Update SQLite tasks.db to mark dispute resolved and finalize rating
+        try:
+            if os.path.exists(TASKS_DB_PATH):
+                with sqlite3.connect(TASKS_DB_PATH) as conn:
+                    cursor = conn.cursor()
+                    clean_num = int(str(task_id).replace("#", "").strip())
+                    cursor.execute("UPDATE tasks SET status = 'Done', is_disputed = 0, final_rating = ?, rating = ? WHERE id = ?", (rating, rating, clean_num))
+                    conn.commit()
+        except Exception as e_sql:
+            logger.error(f"Failed to finalize task #{task_id} in SQLite: {e_sql}")
 
         # Send Telegram notification ONLY after rating is submitted
         try:
