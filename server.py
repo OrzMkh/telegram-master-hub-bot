@@ -1107,10 +1107,10 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 TASKS_SHEETS_CACHE["timestamp"] = now_time
                 if res_tasks:
                     return res_tasks
-            except Exception as e:
-                logger.error(f"Failed to fetch tasks from Google Sheets: {e}")
-                if TASKS_SHEETS_CACHE["data"]:
-                    return TASKS_SHEETS_CACHE["data"]
+        except Exception as e:
+            logger.error(f"Failed to fetch tasks from Google Sheets: {e}")
+            if TASKS_SHEETS_CACHE["data"]:
+                return TASKS_SHEETS_CACHE["data"]
 
         if os.path.exists(TASKS_DB_PATH):
             try:
