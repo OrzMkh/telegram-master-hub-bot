@@ -1144,40 +1144,9 @@ function renderTasksList() {
 }
 
 async function completeTaskAction(taskId, event) {
-    if (event && event.currentTarget) {
-        const btn = event.currentTarget;
-        btn.disabled = true;
-        btn.innerHTML = "⏳ Завершаем...";
-        btn.style.opacity = "0.7";
-    }
-
-    const card = document.getElementById(`task-card-${taskId}`);
-    if (card) {
-        card.style.opacity = "0.3";
-        card.style.transform = "scale(0.97)";
-    }
-
-    // Update in-memory local cache immediately
-    const found = localTasksCache.find(t => String(t.id) === String(taskId));
-    if (found) {
-        found.status = "Done";
-        found.rating = 0;
-    }
-
-    setTimeout(() => {
-        renderTasksList();
-        updateDashboardView();
-    }, 250);
-
-    try {
-        await fetch("/api/tasks/complete", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ task_id: taskId })
-        });
-    } catch (e) {
-        console.error("Complete task error:", e);
-    }
+    if (event && event.stopPropagation) event.stopPropagation();
+    // Prompt the leader immediately with the 1-5 star rating modal
+    openRateTaskModal(taskId);
 }
 window.completeTaskAction = completeTaskAction;
 
