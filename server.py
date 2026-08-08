@@ -612,6 +612,10 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             self.wfile.write(excel_bytes)
         elif path == "/api/bots":
             self.send_json_response(self.get_bots_data())
+        elif path == "/api/analytics/kpi":
+            params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            days = int(params.get("days", ["30"])[0])
+            self.send_json_response(self.get_kpi_analytics(days))
         elif path == "/api/tasks/archives":
             self.send_json_response(self.get_archives())
         elif path == "/api/tasks/dynamics":
@@ -1969,6 +1973,97 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             conn.close()
         except Exception as e:
             logger.error(f"Failed to delete managed bot: {e}")
+
+    def get_kpi_analytics(self, days: int = 30):
+        """
+        GET /api/analytics/kpi?days=30
+        Возвращает KPI-аналитику по сотрудникам на основе таблицы tasks.
+        """
+        result = {
+            "period_days": days,
+            "leaderboard": [],
+            "summary": {
+                "total_tasks": 0,
+                "done_tasks": 0,
+                "avg_rating": 0.0,
+                "avg_sla_pct": 0.0,
+                "total_disputes": 0,
+            }
+        }
+        if not os.path.exists(TASKS_DB_PATH):
+            return result
+
+        try:
+            cutoff = (datetime.datetime.now() - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+            conn = sqlite3.connect(TASKS_DB_PATH)
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+
+            # Per-assignee stats
+            c.execute("""
+                SELECT
+                    assignee,
+                    COUNT(*) AS total_tasks,
+                    SUM(CASE WHEN status IN ('Done','Completed','Выполнено') THEN 1 ELSE 0 END) AS done_tasks,
+                    ROUND(AVG(CASE WHEN rating > 0 THEN rating ELSE NULL END), 1) AS avg_rating,
+                    SUM(CASE WHEN is_disputed = 1 THEN 1 ELSE 0 END) AS disputes
+                FROM tasks
+                WHERE created_at >= ?
+                GROUP BY assignee
+                ORDER BY done_tasks DESC
+            """, (cutoff,))
+            rows = c.fetchall()
+
+            leaderboard = []
+            total_tasks_all = 0
+            done_tasks_all = 0
+            ratings_sum = 0.0
+            ratings_count = 0
+            total_disputes = 0
+
+            for row in rows:
+                assignee = row["assignee"] or "—"
+                total = row["total_tasks"] or 0
+                done = row["done_tasks"] or 0
+                avg_r = float(row["avg_rating"]) if row["avg_rating"] else 0.0
+                disp = row["disputes"] or 0
+                sla_pct = round((done / total * 100) if total > 0 else 0, 1)
+                efficiency = round(
+                    (sla_pct * 0.5) + (avg_r / 5.0 * 30) + (done * 1.0),
+                    1
+                )
+                leaderboard.append({
+                    "assignee": assignee,
+                    "total_tasks": total,
+                    "done_tasks": done,
+                    "avg_rating": avg_r,
+                    "sla_pct": sla_pct,
+                    "disputes": disp,
+                    "efficiency_score": efficiency,
+                })
+                total_tasks_all += total
+                done_tasks_all += done
+                if avg_r > 0:
+                    ratings_sum += avg_r
+                    ratings_count += 1
+                total_disputes += disp
+
+            # Sort by efficiency_score descending
+            leaderboard.sort(key=lambda x: x["efficiency_score"], reverse=True)
+
+            result["leaderboard"] = leaderboard
+            result["summary"] = {
+                "total_tasks": total_tasks_all,
+                "done_tasks": done_tasks_all,
+                "avg_rating": round(ratings_sum / ratings_count, 1) if ratings_count > 0 else 0.0,
+                "avg_sla_pct": round(done_tasks_all / total_tasks_all * 100, 1) if total_tasks_all > 0 else 0.0,
+                "total_disputes": total_disputes,
+            }
+            conn.close()
+        except Exception as e:
+            logger.error(f"get_kpi_analytics error: {e}")
+
+        return result
 
 def init_local_master_dbs():
     try:

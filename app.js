@@ -884,6 +884,7 @@ function switchTab(targetTab) {
     if (targetTab === "rich") loadRichData();
     if (targetTab === "payroll") loadPayrollData();
     if (targetTab === "bots") loadBotsData();
+    if (targetTab === "analytics") loadKpiAnalytics();
 }
 
 window.switchTab = switchTab;
@@ -1872,3 +1873,172 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }, 15000);
 });
+
+// ═══════════════════════════════════════════════════════
+// 📈 ANALYTICS / KPI TAB
+// ═══════════════════════════════════════════════════════
+
+let kpiCurrentDays = 30;
+let kpiDoneChartInstance = null;
+let kpiRatingChartInstance = null;
+
+function setKpiPeriod(days) {
+    kpiCurrentDays = days;
+    [7, 30, 90, 365].forEach(d => {
+        const btn = document.getElementById(`kpiBtn${d}`);
+        if (btn) btn.classList.toggle("active", d === days);
+    });
+    const badge = document.getElementById("kpiPeriodBadge");
+    if (badge) badge.textContent = `${days} дней`;
+    loadKpiAnalytics();
+}
+
+async function loadKpiAnalytics() {
+    const board = document.getElementById("kpiLeaderboard");
+    if (board) board.innerHTML = `<div class="muted-text text-center" style="padding:20px;">⏳ Загрузка данных...</div>`;
+
+    try {
+        const res = await fetch(`/api/analytics/kpi?days=${kpiCurrentDays}`);
+        const data = await res.json();
+        renderKpiSummary(data.summary);
+        renderKpiLeaderboard(data.leaderboard);
+        renderKpiCharts(data.leaderboard);
+    } catch (e) {
+        if (board) board.innerHTML = `<div class="muted-text text-center" style="padding:20px; color:var(--accent-rose);">❌ Ошибка загрузки данных</div>`;
+        console.error("loadKpiAnalytics error:", e);
+    }
+}
+
+function renderKpiSummary(summary) {
+    const el = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
+    el("kpiStatTotal", summary.total_tasks ?? "—");
+    el("kpiStatSla", summary.avg_sla_pct != null ? `${summary.avg_sla_pct}%` : "—");
+    el("kpiStatDisputes", summary.total_disputes ?? "—");
+}
+
+function renderKpiLeaderboard(leaderboard) {
+    const board = document.getElementById("kpiLeaderboard");
+    if (!board) return;
+
+    if (!leaderboard || leaderboard.length === 0) {
+        board.innerHTML = `<div class="muted-text text-center" style="padding:24px;">📭 Нет данных за выбранный период</div>`;
+        return;
+    }
+
+    const medals = ["🥇", "🥈", "🥉"];
+    const slaColor = (pct) => pct >= 80 ? "var(--accent-emerald)" : pct >= 60 ? "var(--accent-amber)" : "var(--accent-rose)";
+    const starStr = (r) => r > 0 ? `⭐ ${r.toFixed(1)}` : "—";
+    const gradients = [
+        "linear-gradient(135deg, rgba(251,191,36,0.15), rgba(251,191,36,0.05))",
+        "linear-gradient(135deg, rgba(56,189,248,0.12), rgba(56,189,248,0.04))",
+        "linear-gradient(135deg, rgba(192,132,252,0.12), rgba(192,132,252,0.04))"
+    ];
+    const borderColors = ["rgba(251,191,36,0.4)", "rgba(56,189,248,0.3)", "rgba(192,132,252,0.3)"];
+
+    board.innerHTML = leaderboard.map((emp, idx) => {
+        const medal = medals[idx] || `#${idx + 1}`;
+        const bg = gradients[idx] || "rgba(30,41,59,0.5)";
+        const border = borderColors[idx] || "rgba(255,255,255,0.08)";
+        const isTop = idx === 0;
+        const slaBar = Math.min(emp.sla_pct, 100);
+
+        return `
+            <div style="
+                background: ${bg};
+                border: 1px solid ${border};
+                border-radius: var(--radius-md);
+                padding: 14px;
+                margin-bottom: 10px;
+                position: relative;
+                overflow: hidden;
+            ">
+                ${isTop ? `<div style="position:absolute; top:8px; right:10px; font-size:10px; background:rgba(251,191,36,0.2); color:#fbbf24; border:1px solid rgba(251,191,36,0.4); border-radius:20px; padding:2px 8px; font-weight:700;">⚡ Лучший</div>` : ""}
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                    <span style="font-size:22px;">${medal}</span>
+                    <div>
+                        <div style="font-weight:700; font-size:15px; color:var(--text-primary);">${emp.assignee}</div>
+                        <div style="font-size:11px; color:var(--text-muted);">Эффективность: ${emp.efficiency_score}</div>
+                    </div>
+                </div>
+                <div style="display:flex; gap:16px; margin-bottom:10px; flex-wrap:wrap;">
+                    <span style="font-size:12px; color:var(--text-muted);">✅ <b style="color:var(--text-primary);">${emp.done_tasks}</b>/<b>${emp.total_tasks}</b> задач</span>
+                    <span style="font-size:12px; color:var(--text-muted);">${starStr(emp.avg_rating)} рейтинг</span>
+                    ${emp.disputes > 0 ? `<span style="font-size:12px; color:var(--accent-rose);">⚠️ ${emp.disputes} спор${emp.disputes > 1 ? "а" : ""}</span>` : ""}
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <div style="flex:1; height:6px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden;">
+                        <div style="width:${slaBar}%; height:100%; background:${slaColor(emp.sla_pct)}; border-radius:3px; transition:width 0.6s ease;"></div>
+                    </div>
+                    <span style="font-size:12px; color:${slaColor(emp.sla_pct)}; font-weight:700; min-width:38px;">${emp.sla_pct}%</span>
+                </div>
+            </div>
+        `;
+    }).join("");
+}
+
+function renderKpiCharts(leaderboard) {
+    if (!leaderboard || leaderboard.length === 0) return;
+    if (typeof Chart === "undefined") return;
+
+    const top5 = leaderboard.slice(0, 5);
+    const labels = top5.map(e => e.assignee.split(" ")[0]); // Только имя
+    const doneData = top5.map(e => e.done_tasks);
+    const ratingData = top5.map(e => e.avg_rating);
+
+    // Bar chart — выполнено задач
+    const doneCtx = document.getElementById("kpiDoneChart");
+    if (doneCtx) {
+        if (kpiDoneChartInstance) kpiDoneChartInstance.destroy();
+        kpiDoneChartInstance = new Chart(doneCtx, {
+            type: "bar",
+            data: {
+                labels,
+                datasets: [{
+                    data: doneData,
+                    backgroundColor: "rgba(56,189,248,0.6)",
+                    borderColor: "rgba(56,189,248,1)",
+                    borderWidth: 1,
+                    borderRadius: 4,
+                }]
+            },
+            options: {
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "rgba(255,255,255,0.04)" } },
+                    y: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "rgba(255,255,255,0.04)" } }
+                }
+            }
+        });
+    }
+
+    // Line chart — средний рейтинг
+    const ratingCtx = document.getElementById("kpiRatingChart");
+    if (ratingCtx) {
+        if (kpiRatingChartInstance) kpiRatingChartInstance.destroy();
+        kpiRatingChartInstance = new Chart(ratingCtx, {
+            type: "line",
+            data: {
+                labels,
+                datasets: [{
+                    data: ratingData,
+                    borderColor: "rgba(192,132,252,1)",
+                    backgroundColor: "rgba(192,132,252,0.15)",
+                    pointBackgroundColor: "rgba(192,132,252,1)",
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                }]
+            },
+            options: {
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "rgba(255,255,255,0.04)" } },
+                    y: { min: 0, max: 5, ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "rgba(255,255,255,0.04)" } }
+                }
+            }
+        });
+    }
+}
+
+window.setKpiPeriod = setKpiPeriod;
+window.loadKpiAnalytics = loadKpiAnalytics;
