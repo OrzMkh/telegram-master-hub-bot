@@ -2686,23 +2686,24 @@ window.sendScheduleToTelegram = sendScheduleToTelegram;
 
 document.addEventListener("DOMContentLoaded", () => {
     // 👑 Auto-unlock immediately for owner @orzmkh without any password
-    const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
-    const tgUsername = (tgUser?.username || "").toLowerCase();
-    const isOwnerOrzmkh = tgUsername === "orzmkh" || tgUsername.includes("orzmkh") || (tgUser?.first_name || "").toLowerCase().includes("orzu");
+    try {
+        const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+        const tgUsername = (tgUser?.username || "").toLowerCase();
+        const isOwnerOrzmkh = tgUsername === "orzmkh" || tgUsername.includes("orzmkh") || (tgUser?.first_name || "").toLowerCase().includes("orzu");
 
-    if (isOwnerOrzmkh || sessionStorage.getItem("master_hub_authenticated") === "true") {
-        const overlay = document.getElementById("authLockOverlay");
-        if (overlay) {
-            overlay.classList.add("unlocked");
-            overlay.style.display = "none";
+        if (isOwnerOrzmkh || sessionStorage.getItem("master_hub_authenticated") === "true") {
+            const overlay = document.getElementById("authLockOverlay");
+            if (overlay) {
+                overlay.classList.add("unlocked");
+                overlay.style.display = "none";
+            }
+            sessionStorage.setItem("master_hub_authenticated", "true");
         }
-        sessionStorage.setItem("master_hub_authenticated", "true");
-    }
+    } catch(e) { /* silent */ }
 
-    applySavedTabOrder();
-    initPayrollModule();
     // Pre-initialize schedule CRM so data is ready when user clicks tab
     setTimeout(() => {
         initScheduleCRM();
     }, 200);
 });
+
