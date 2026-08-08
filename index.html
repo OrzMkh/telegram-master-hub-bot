@@ -69,6 +69,10 @@
                     <span class="tab-icon">💰</span>
                     <span class="tab-label">Налоги & ЗП</span>
                 </button>
+                <button class="tab-btn" data-tab="schedule" onclick="switchTab('schedule')">
+                    <span class="tab-icon">📅</span>
+                    <span class="tab-label">График / ЗП</span>
+                </button>
                 <button class="tab-btn" data-tab="bots" onclick="switchTab('bots')">
                     <span class="tab-icon">⚙️</span>
                     <span class="tab-label">Боты</span>
@@ -418,6 +422,97 @@
                 </div>
             </section>
 
+            <!-- TAB: SCHEDULE / PAYROLL CRM -->
+            <section id="tab-schedule" class="tab-content">
+                <!-- Header Row -->
+                <div class="section-title" style="flex-wrap:wrap; gap:8px;">
+                    <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:200px;">
+                        <h3>📅 График &amp; ЗП CRM</h3>
+                        <span id="scheduleSyncBadge" class="badge" style="font-size:10px; color:var(--accent-emerald); background:rgba(16,185,129,0.12); padding:3px 8px; border-radius:20px;">⏳ Загрузка...</span>
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <select id="scheduleMonthSelect" class="form-input" style="font-size:12px; padding:6px 10px; min-width:160px; border-radius:10px;">
+                            <option value="">Выберите месяц...</option>
+                        </select>
+                        <button class="btn-sm btn-primary-sm" onclick="refreshScheduleData()" id="btnScheduleRefresh">🔄</button>
+                    </div>
+                </div>
+
+                <!-- KPI Cards -->
+                <div class="stats-grid" id="scheduleKpiGrid" style="margin-bottom:14px;">
+                    <div class="stat-card gradient-blue">
+                        <div class="stat-icon">👥</div>
+                        <div class="stat-val" id="schedKpiEmp">—</div>
+                        <div class="stat-lbl">Сотрудников</div>
+                    </div>
+                    <div class="stat-card gradient-emerald">
+                        <div class="stat-icon">⏱</div>
+                        <div class="stat-val" id="schedKpiHours">—</div>
+                        <div class="stat-lbl">Всего часов</div>
+                    </div>
+                    <div class="stat-card gradient-purple">
+                        <div class="stat-icon">💰</div>
+                        <div class="stat-val" id="schedKpiFot">—</div>
+                        <div class="stat-lbl">Общий ФОТ</div>
+                    </div>
+                    <div class="stat-card gradient-amber">
+                        <div class="stat-icon">🏛</div>
+                        <div class="stat-val" id="schedKpiTax">—</div>
+                        <div class="stat-lbl">Налоги (24%)</div>
+                    </div>
+                </div>
+
+                <!-- Second KPI row: vacation/sick -->
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:14px;">
+                    <div class="stat-card" style="background:rgba(251,191,36,0.08); border-color:rgba(251,191,36,0.2);">
+                        <div class="stat-icon">🏖️</div>
+                        <div class="stat-val" id="schedKpiVac" style="font-size:20px;">—</div>
+                        <div class="stat-lbl">В отпуске</div>
+                    </div>
+                    <div class="stat-card" style="background:rgba(239,68,68,0.08); border-color:rgba(239,68,68,0.2);">
+                        <div class="stat-icon">🤒</div>
+                        <div class="stat-val" id="schedKpiSick" style="font-size:20px;">—</div>
+                        <div class="stat-lbl">Больничных</div>
+                    </div>
+                    <div class="stat-card" style="background:rgba(16,185,129,0.08); border-color:rgba(16,185,129,0.2);">
+                        <div class="stat-icon">➕</div>
+                        <div class="stat-val" id="schedKpiExtra" style="font-size:20px;">—</div>
+                        <div class="stat-lbl">Доп. смены</div>
+                    </div>
+                </div>
+
+                <!-- Department Filter -->
+                <div class="card-box" style="margin-bottom:12px; padding:10px 12px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                        <label style="font-size:12px; color:var(--text-muted); font-weight:600;">🏢 Фильтр по отделу:</label>
+                        <span id="schedEmpCountBadge" class="badge" style="font-size:11px;">0 сотрудников</span>
+                    </div>
+                    <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:4px;" id="schedDeptFilterRow">
+                        <button class="preset-pill active" id="schedDeptAll" onclick="filterScheduleDept('all')">Все</button>
+                    </div>
+                </div>
+
+                <!-- Main Employee Table -->
+                <div class="card-box" style="overflow-x:auto; padding:0;">
+                    <div style="padding:12px 14px; border-bottom:1px solid var(--card-border);">
+                        <h4>📋 Табель сотрудников</h4>
+                    </div>
+                    <div id="scheduleTableContainer">
+                        <div class="loading-spinner" style="padding:30px;">Выберите месяц для загрузки данных...</div>
+                    </div>
+                </div>
+
+                <!-- Export Buttons -->
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px;">
+                    <button class="btn btn-primary" id="btnScheduleExcelExport" onclick="exportScheduleExcel()" style="background:linear-gradient(135deg,#10b981,#059669); font-size:12px; padding:10px;">
+                        📥 Скачать Excel
+                    </button>
+                    <button class="btn btn-secondary" id="btnScheduleTelegram" onclick="sendScheduleToTelegram()" style="background:linear-gradient(135deg,#0284c7,#0369a1); color:white; font-size:12px; padding:10px;">
+                        📲 В Telegram
+                    </button>
+                </div>
+            </section>
+
             <!-- TAB 7: BOT MANAGER & CONFIGURATOR -->
             <section id="tab-bots" class="tab-content">
                 <div class="section-title">
@@ -438,8 +533,56 @@
         </main>
     </div>
 
+    <!-- Employee Detail Slide-in Card (Schedule CRM) -->
+    <div id="empDetailOverlay" class="modal-backdrop hidden" onclick="closeEmpDetail(event)" style="align-items:flex-end;">
+        <div id="empDetailCard" style="background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px 20px 0 0; width:100%; max-height:85vh; overflow-y:auto; padding:20px; transform:translateY(100%); transition:transform 0.3s ease;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <div>
+                    <h3 id="empDetailName" style="margin:0; font-size:18px; font-weight:700;">—</h3>
+                    <span id="empDetailDept" style="font-size:12px; color:var(--text-muted); font-weight:500;"></span>
+                </div>
+                <button onclick="closeEmpDetailBtn()" style="background:rgba(255,255,255,0.08); border:none; color:var(--text-muted); width:32px; height:32px; border-radius:50%; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center;">✕</button>
+            </div>
+
+            <!-- Employee KPI Row -->
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px;">
+                <div style="background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.2); border-radius:12px; padding:10px; text-align:center;">
+                    <div style="font-size:18px; font-weight:700; color:var(--accent-blue);" id="empDetailShifts">—</div>
+                    <div style="font-size:10px; color:var(--text-muted);">Смены (п/ф)</div>
+                </div>
+                <div style="background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.2); border-radius:12px; padding:10px; text-align:center;">
+                    <div style="font-size:18px; font-weight:700; color:var(--accent-emerald);" id="empDetailHours">—</div>
+                    <div style="font-size:10px; color:var(--text-muted);">Часов</div>
+                </div>
+                <div style="background:rgba(192,132,252,0.1); border:1px solid rgba(192,132,252,0.2); border-radius:12px; padding:10px; text-align:center;">
+                    <div style="font-size:18px; font-weight:700; color:var(--accent-purple);" id="empDetailOklad">—</div>
+                    <div style="font-size:10px; color:var(--text-muted);">Оклад</div>
+                </div>
+            </div>
+
+            <!-- Pay breakdown -->
+            <div id="empDetailPayBreakdown" style="background:rgba(255,255,255,0.04); border-radius:12px; padding:12px; margin-bottom:14px; font-size:13px; line-height:1.9;"></div>
+
+            <!-- Mini Calendar -->
+            <div style="margin-bottom:8px;">
+                <label style="font-size:12px; color:var(--text-muted); font-weight:600;">📅 Календарь смен:</label>
+            </div>
+            <div id="empDetailCalendar" style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:16px;"></div>
+
+            <!-- Legend -->
+            <div style="display:flex; gap:10px; flex-wrap:wrap; font-size:11px; color:var(--text-muted);">
+                <span>🟩 Смена (12ч)</span>
+                <span>🟨 Неполная</span>
+                <span>⬜ Выходной</span>
+                <span>🟦 Отпуск</span>
+                <span>🟥 Больничный</span>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal for broken bikes breakdown by city -->
     <div id="brokenBikesModal" class="modal-backdrop hidden">
+
         <div class="modal-card">
             <h3>🛠 Сломанные байки по городам</h3>
             <p class="muted-text">Детализация на основе последних отчётов каждого города:</p>

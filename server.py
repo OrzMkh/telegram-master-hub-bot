@@ -698,8 +698,19 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             date_to = params.get("date_to", [None])[0]
             assignee = params.get("assignee", [None])[0]
             self.send_json_response(self.get_tasks_dynamics(date_from, date_to, assignee))
+        elif path == "/api/schedule/months":
+            self.send_json_response(self.get_schedule_months())
+        elif path == "/api/schedule/data":
+            params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            gid = params.get("gid", [None])[0]
+            self.send_json_response(self.get_schedule_data(gid))
+        elif path == "/api/schedule/payroll":
+            params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            gid = params.get("gid", [None])[0]
+            self.send_json_response(self.get_schedule_payroll(gid))
         else:
             self.send_error(404, "API Endpoint Not Found")
+
 
     def handle_api_post(self):
         content_length = int(self.headers.get("Content-Length", 0))
@@ -2335,7 +2346,360 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
 
         return result
 
+    # ─────────────────────────────────────────────
+    #  SCHEDULE / PAYROLL CRM  (Google Sheets Live)
+    # ─────────────────────────────────────────────
+    SPREADSHEET_ID = "1cbFcg0LmUyQFlO2ymCNXPhbn2jnQf_tJZY9TH2nn10g"
+
+    # Cache {gid: {ts, data}}
+    _schedule_cache = {}
+
+    MONTH_NAMES = {
+        1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
+        5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
+        9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь"
+    }
+
+    # Known dept separator rows (only dept name present, all other cells empty)
+    DEPT_NAMES = {
+        "руководитель": "Руководитель",
+        "старшие": "Старшие",
+        "активаторы": "Активаторы",
+        "ресепшн": "Ресепшн",
+        "склад": "Склад",
+        "поддержка": "Поддержка",
+        "тм": "ТМ",
+        "модер": "Модер",
+        "лайвопс": "Лайвопс",
+        "клининг": "Клининг",
+        "лавка": "Лавка",
+        "специалист активации": "Активаторы",
+        "дежурный администратор": "Администраторы",
+        "сотрудник ахо": "Склад",
+        "специалист поддержки": "Поддержка",
+        "оператор тм": "ТМ",
+        "модератор смм": "Модер",
+        "руководитель отдела": "Руководитель",
+    }
+
+    def _gs_client(self):
+        return get_google_sheets_client()
+
+    def get_schedule_months(self):
+        try:
+            gc = self._gs_client()
+            if not gc:
+                return {"error": "Google Sheets недоступен", "months": []}
+            sh = gc.open_by_key(self.SPREADSHEET_ID)
+            months = []
+            for ws in sh.worksheets():
+                title = ws.title.strip()
+                gid = ws.id
+                # Try to extract month/year from title
+                months.append({
+                    "gid": gid,
+                    "title": title,
+                    "label": title
+                })
+            return {"status": "ok", "months": months}
+        except Exception as e:
+            logger.error(f"get_schedule_months error: {e}")
+            return {"error": str(e), "months": []}
+
+    def _decode_cell(self, val):
+        """Returns (type, hours): type ∈ shift|off|vacation|sick|new|partial"""
+        if val is None or str(val).strip() == "":
+            return ("off", 0)
+        s = str(val).strip().upper()
+        if s == "В":
+            return ("off", 0)
+        if s == "О":
+            return ("vacation", 0)
+        if s == "Б":
+            return ("sick", 0)
+        if s in ("НОВ.", "НОВ", "NOV"):
+            return ("new", 0)
+        # Numeric value = hours
+        try:
+            h = float(s.replace(",", "."))
+            if h == 12.0:
+                return ("shift", 12)
+            return ("partial", h)
+        except Exception:
+            return ("unknown", 0)
+
+    def get_schedule_data(self, gid=None):
+        cache_key = str(gid) if gid else "0"
+        now_ts = time.time()
+        cached = MasterHubHandler._schedule_cache.get(cache_key)
+        if cached and (now_ts - cached["ts"]) < 60:
+            return cached["data"]
+
+        try:
+            gc = self._gs_client()
+            if not gc:
+                return {"error": "Google Sheets недоступен", "employees": [], "departments": []}
+            sh = gc.open_by_key(self.SPREADSHEET_ID)
+            if gid:
+                ws = None
+                for w in sh.worksheets():
+                    if str(w.id) == str(gid):
+                        ws = w
+                        break
+                if not ws:
+                    ws = sh.get_worksheet(0)
+            else:
+                ws = sh.get_worksheet(0)
+
+            rows = ws.get_all_values()
+            if not rows:
+                return {"error": "Лист пуст", "employees": [], "departments": []}
+
+            # Parse header rows to find date columns
+            # Row 0 = main header, Row 1 = sub-header with dates
+            header_row_0 = rows[0] if len(rows) > 0 else []
+            header_row_1 = rows[1] if len(rows) > 1 else []
+
+            # Find date column indices (format: DD.MM)
+            date_cols = []  # list of (col_idx, date_str)
+            for ci, cell in enumerate(header_row_1):
+                cell_s = str(cell).strip()
+                import re as _re
+                if _re.match(r'\d{2}\.\d{2}', cell_s):
+                    date_cols.append((ci, cell_s))
+            if not date_cols:
+                # Try row 0
+                for ci, cell in enumerate(header_row_0):
+                    cell_s = str(cell).strip()
+                    import re as _re
+                    if _re.match(r'\d{2}\.\d{2}', cell_s):
+                        date_cols.append((ci, cell_s))
+
+            current_dept = "Общий"
+            employees = []
+            departments_seen = []
+
+            for row_idx, row in enumerate(rows[2:], start=2):
+                if not row or len(row) == 0:
+                    continue
+                fio = str(row[0]).strip() if row[0] else ""
+                if not fio:
+                    continue
+
+                # Check if this is a dept separator row
+                fio_lower = fio.lower()
+                matched_dept = None
+                for dk, dv in self.DEPT_NAMES.items():
+                    if fio_lower == dk or fio_lower.startswith(dk):
+                        # Check other cells are empty = dept separator
+                        other_vals = [str(c).strip() for c in row[1:10] if str(c).strip()]
+                        if len(other_vals) == 0:
+                            matched_dept = dv
+                            break
+                if matched_dept:
+                    current_dept = matched_dept
+                    if matched_dept not in departments_seen:
+                        departments_seen.append(matched_dept)
+                    continue
+
+                # Filter legend/summary rows
+                import re as _re
+                if not _re.search(r'[a-zA-Zа-яА-ЯёЁa-zA-Z]{2,}', fio):
+                    continue
+                fio_lower2 = fio.lower()
+                if any(kw in fio_lower2 for kw in ["фио", "итого", "всего", "зарплаты", "легенда", "в,", "о,", "б,"]):
+                    continue
+                # Pure numeric rows (totals)
+                if _re.match(r'^\d[\d\s]*$', fio):
+                    continue
+
+                # --- Parse structured columns ---
+                def _safe_float(v, default=0.0):
+                    try:
+                        return float(str(v).replace(" ", "").replace(",", "."))
+                    except Exception:
+                        return default
+
+                def _safe_int(v, default=0):
+                    try:
+                        return int(float(str(v).replace(" ", "").replace(",", ".")))
+                    except Exception:
+                        return default
+
+                # Col B=1: Смены (факт целое)
+                shifts_fact_raw = _safe_float(row[1] if len(row) > 1 else 0)
+                # Col C=2: Точное кол-во смен (дробное)
+                shifts_exact = _safe_float(row[2] if len(row) > 2 else 0)
+                # Col D=3: Смен в начале (план)
+                shifts_plan = _safe_int(row[3] if len(row) > 3 else 15)
+                if shifts_plan <= 0:
+                    shifts_plan = 15
+                # Col E=4: Отпуски (дни)
+                vacation_days = _safe_int(row[4] if len(row) > 4 else 0)
+                # Col F=5: Больничные (дни)
+                sick_days = _safe_int(row[5] if len(row) > 5 else 0)
+                # Col G=6: Сумма больничного
+                sick_pay_amount = _safe_float(row[6] if len(row) > 6 else 0)
+                # Col H=7: Зарплата (ставка/смена)
+                shift_rate_col = _safe_float(row[7] if len(row) > 7 else 0)
+                # Col I=8: Оклад
+                salary_col = _safe_float(row[8] if len(row) > 8 else 0)
+                # Col J=9: Часы
+                hours_total = _safe_float(row[9] if len(row) > 9 else 0)
+
+                # Parse daily cells
+                daily = []
+                shifts_counted = 0
+                hours_counted = 0.0
+                vacation_counted = 0
+                sick_counted = 0
+
+                for col_idx, date_str in date_cols:
+                    cell_val = row[col_idx] if col_idx < len(row) else ""
+                    dtype, dhours = self._decode_cell(cell_val)
+                    daily.append({
+                        "date": date_str,
+                        "type": dtype,
+                        "hours": dhours,
+                        "raw": str(cell_val).strip()
+                    })
+                    if dtype == "shift":
+                        shifts_counted += 1
+                        hours_counted += 12.0
+                    elif dtype == "partial":
+                        shifts_counted_frac = dhours / 12.0
+                        shifts_counted += shifts_counted_frac
+                        hours_counted += dhours
+                    elif dtype == "vacation":
+                        vacation_counted += 1
+                    elif dtype == "sick":
+                        sick_counted += 1
+
+                # Use spreadsheet values if available, else computed
+                if shifts_exact > 0:
+                    final_shifts_exact = shifts_exact
+                elif shifts_fact_raw > 0:
+                    final_shifts_exact = shifts_fact_raw
+                else:
+                    final_shifts_exact = round(shifts_counted, 1)
+
+                if hours_total > 0:
+                    final_hours = hours_total
+                else:
+                    final_hours = round(hours_counted, 1)
+
+                vac_days = vacation_days if vacation_days > 0 else vacation_counted
+                s_days = sick_days if sick_days > 0 else sick_counted
+
+                employees.append({
+                    "name": fio,
+                    "dept": current_dept,
+                    "shifts_plan": shifts_plan,
+                    "shifts_fact": round(final_shifts_exact, 1),
+                    "shifts_extra": round(max(0, final_shifts_exact - shifts_plan), 1),
+                    "hours": final_hours,
+                    "vacation_days": vac_days,
+                    "sick_days": s_days,
+                    "sick_pay": round(sick_pay_amount),
+                    "salary": round(salary_col),
+                    "shift_rate": round(shift_rate_col),
+                    "daily": daily
+                })
+
+            result = {
+                "status": "ok",
+                "sheet_title": ws.title,
+                "employees": employees,
+                "departments": departments_seen,
+                "date_cols": [d for _, d in date_cols],
+                "total_employees": len(employees)
+            }
+            MasterHubHandler._schedule_cache[cache_key] = {"ts": now_ts, "data": result}
+            return result
+        except Exception as e:
+            logger.error(f"get_schedule_data error: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"error": str(e), "employees": [], "departments": []}
+
+    def get_schedule_payroll(self, gid=None):
+        data = self.get_schedule_data(gid)
+        if "error" in data and not data.get("employees"):
+            return data
+
+        employees = data.get("employees", [])
+        payroll_rows = []
+        totals = {
+            "fot": 0, "base_pay": 0, "extra_pay": 0,
+            "sick_total": 0, "tax_total": 0, "net_total": 0
+        }
+
+        for emp in employees:
+            salary = emp["salary"]
+            if salary <= 0:
+                continue
+            shifts_plan = emp["shifts_plan"]
+            shifts_fact = emp["shifts_fact"]
+            sick_days = emp["sick_days"]
+            vac_days = emp["vacation_days"]
+            sick_pay = emp["sick_pay"]
+
+            if shifts_plan <= 0:
+                shifts_plan = 15
+            rate_per_shift = salary / shifts_plan
+
+            # Base pay: planned shifts at standard rate
+            planned_pay = min(shifts_fact, shifts_plan) * rate_per_shift
+            # Extra shifts bonus
+            extra_shifts = max(0, shifts_fact - shifts_plan)
+            extra_pay = extra_shifts * rate_per_shift
+            # Total gross
+            gross = round(planned_pay + extra_pay)
+            # Sick pay from spreadsheet if present
+            if sick_pay <= 0 and sick_days > 0:
+                sick_pay = round(rate_per_shift * 0.6 * sick_days)
+            # Tax: ROUND((gross + sick_pay) / 0.88 * 0.24, 0)
+            total_earned = gross + sick_pay
+            tax = round(total_earned / 0.88 * 0.24) if total_earned > 0 else 0
+            net = total_earned - round(total_earned * 0.12)  # after 12% НДФЛ
+            fot = total_earned + tax
+
+            totals["base_pay"] += planned_pay
+            totals["extra_pay"] += extra_pay
+            totals["sick_total"] += sick_pay
+            totals["tax_total"] += tax
+            totals["net_total"] += net
+            totals["fot"] += fot
+
+            payroll_rows.append({
+                "name": emp["name"],
+                "dept": emp["dept"],
+                "salary": salary,
+                "shifts_plan": shifts_plan,
+                "shifts_fact": shifts_fact,
+                "shifts_extra": extra_shifts,
+                "hours": emp["hours"],
+                "vacation_days": vac_days,
+                "sick_days": sick_days,
+                "base_pay": round(planned_pay),
+                "extra_pay": round(extra_pay),
+                "gross": gross,
+                "sick_pay": sick_pay,
+                "tax": tax,
+                "net": net,
+                "fot": fot
+            })
+
+        return {
+            "status": "ok",
+            "sheet_title": data.get("sheet_title", ""),
+            "employees": payroll_rows,
+            "totals": {k: round(v) for k, v in totals.items()},
+            "total_employees": len(payroll_rows)
+        }
+
 def init_local_master_dbs():
+
     try:
         conn = sqlite3.connect(BIKES_DB_PATH)
         c = conn.cursor()
