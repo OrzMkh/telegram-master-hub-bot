@@ -1092,6 +1092,9 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         result = []
         for r in raw_rows:
             tot = int(r.get("total_bikes") or 0)
+            if "ташкент" in r["name"].lower() and tot < 500:
+                tot = 1670
+
             c_name_lower = r["name"].lower()
 
             iss = 0
@@ -2330,7 +2333,7 @@ def init_local_master_dbs():
             )
         """)
         default_cities = [
-            ("Ташкент", 50, 0),
+            ("Ташкент", 1670, 0),
             ("Самарканд", 200, 0),
             ("Фергана", 80, 0),
             ("Андижан", 50, 0),
