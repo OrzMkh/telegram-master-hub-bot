@@ -1025,19 +1025,28 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
     def get_tasks_data(self):
         creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
         now_time = time.time()
-        if creds_json_env:
-            if now_time - TASKS_SHEETS_CACHE["timestamp"] < 15 and TASKS_SHEETS_CACHE["data"]:
-                return TASKS_SHEETS_CACHE["data"]
-            try:
-                import gspread
-                from google.oauth2.service_account import Credentials
-                scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        if now_time - TASKS_SHEETS_CACHE["timestamp"] < 15 and TASKS_SHEETS_CACHE["data"]:
+            return TASKS_SHEETS_CACHE["data"]
+        try:
+            import gspread
+            from google.oauth2.service_account import Credentials
+            scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+            client = None
+            if creds_json_env:
                 s_clean = creds_json_env.strip().strip("'").strip('"')
                 info = json.loads(s_clean)
                 if isinstance(info.get("private_key"), str):
                     info["private_key"] = info["private_key"].replace("\\n", "\n")
                 creds = Credentials.from_service_account_info(info, scopes=scopes)
                 client = gspread.authorize(creds)
+            elif os.path.exists("credentials.json"):
+                creds = Credentials.from_service_account_file("credentials.json", scopes=scopes)
+                client = gspread.authorize(creds)
+            elif os.path.exists(os.path.join(BASE_DIR, "credentials.json")):
+                creds = Credentials.from_service_account_file(os.path.join(BASE_DIR, "credentials.json"), scopes=scopes)
+                client = gspread.authorize(creds)
+
+            if client:
                 spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
                 sheet = spreadsheet.sheet1
                 rows = sheet.get_all_values()
@@ -1977,7 +1986,8 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
     def get_kpi_analytics(self, days: int = 30):
         """
         GET /api/analytics/kpi?days=30
-        Возвращает KPI-аналитику по сотрудникам на основе таблицы tasks.
+        Возвращает KPI-аналитику по сотрудникам на основе живых данных Google Sheets (или fallback БД).
+        Всегда актуальные данные с синхронизацией.
         """
         result = {
             "period_days": days,
@@ -1990,76 +2000,124 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 "total_disputes": 0,
             }
         }
-        if not os.path.exists(TASKS_DB_PATH):
-            return result
-
         try:
-            cutoff = (datetime.datetime.now() - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
-            conn = sqlite3.connect(TASKS_DB_PATH)
-            conn.row_factory = sqlite3.Row
-            c = conn.cursor()
+            tasks = self.get_tasks_data() or []
+            if not tasks:
+                return result
 
-            # Per-assignee stats
-            c.execute("""
-                SELECT
-                    assignee,
-                    COUNT(*) AS total_tasks,
-                    SUM(CASE WHEN status IN ('Done','Completed','Выполнено') THEN 1 ELSE 0 END) AS done_tasks,
-                    ROUND(AVG(CASE WHEN rating > 0 THEN rating ELSE NULL END), 1) AS avg_rating,
-                    SUM(CASE WHEN is_disputed = 1 THEN 1 ELSE 0 END) AS disputes
-                FROM tasks
-                WHERE created_at >= ?
-                GROUP BY assignee
-                ORDER BY done_tasks DESC
-            """, (cutoff,))
-            rows = c.fetchall()
+            cutoff_date = (datetime.datetime.now() - datetime.timedelta(days=days)).date()
+
+            def parse_task_date(s):
+                if not s:
+                    return None
+                s_clean = str(s).strip()
+                for fmt in (
+                    "%d.%m.%Y %H:%M:%S",
+                    "%d.%m.%Y %H:%M",
+                    "%d.%m.%Y",
+                    "%Y-%m-%d %H:%M:%S",
+                    "%Y-%m-%d %H:%M",
+                    "%Y-%m-%d",
+                    "%d/%m/%Y %H:%M",
+                    "%d/%m/%Y",
+                ):
+                    try:
+                        return datetime.datetime.strptime(s_clean, fmt).date()
+                    except Exception:
+                        pass
+                return None
+
+            # Filter tasks by period if date can be parsed
+            filtered_tasks = []
+            if days >= 365:
+                filtered_tasks = tasks
+            else:
+                for t in tasks:
+                    d = parse_task_date(t.get("created_at"))
+                    if d:
+                        if d >= cutoff_date:
+                            filtered_tasks.append(t)
+                    else:
+                        filtered_tasks.append(t)
+
+            # Fallback if filter leaves no tasks
+            if not filtered_tasks and tasks:
+                filtered_tasks = tasks
+
+            # Aggregate per assignee
+            grouped = {}
+            for t in filtered_tasks:
+                assignee = (t.get("assignee") or "").strip()
+                if not assignee or assignee.lower() in ("—", "-", ""):
+                    assignee = "Команда"
+                if assignee not in grouped:
+                    grouped[assignee] = {
+                        "assignee": assignee,
+                        "total_tasks": 0,
+                        "done_tasks": 0,
+                        "ratings": [],
+                        "disputes": 0
+                    }
+
+                g = grouped[assignee]
+                g["total_tasks"] += 1
+
+                st = str(t.get("status", "")).strip().lower()
+                is_done = st in ("done", "completed", "выполнено", "завершено", "готово") or bool(t.get("rating") and t.get("rating") > 0)
+                if is_done:
+                    g["done_tasks"] += 1
+
+                r = t.get("rating") or t.get("final_rating") or t.get("initial_rating") or 0
+                try:
+                    r_num = float(r)
+                    if r_num > 0:
+                        g["ratings"].append(r_num)
+                except Exception:
+                    pass
+
+                if t.get("is_disputed") or (t.get("rating_comment") and "оспаривание" in str(t.get("rating_comment")).lower()):
+                    g["disputes"] += 1
 
             leaderboard = []
             total_tasks_all = 0
             done_tasks_all = 0
-            ratings_sum = 0.0
-            ratings_count = 0
+            all_ratings = []
             total_disputes = 0
 
-            for row in rows:
-                assignee = row["assignee"] or "—"
-                total = row["total_tasks"] or 0
-                done = row["done_tasks"] or 0
-                avg_r = float(row["avg_rating"]) if row["avg_rating"] else 0.0
-                disp = row["disputes"] or 0
-                sla_pct = round((done / total * 100) if total > 0 else 0, 1)
-                efficiency = round(
-                    (sla_pct * 0.5) + (avg_r / 5.0 * 30) + (done * 1.0),
-                    1
-                )
+            for ass, g in grouped.items():
+                tot = g["total_tasks"]
+                done = g["done_tasks"]
+                ratings = g["ratings"]
+                disp = g["disputes"]
+                avg_r = round(sum(ratings) / len(ratings), 1) if ratings else 0.0
+                sla_pct = round((done / tot * 100) if tot > 0 else 0, 1)
+                efficiency = round((sla_pct * 0.5) + (avg_r / 5.0 * 30) + (done * 1.0), 1)
+
                 leaderboard.append({
-                    "assignee": assignee,
-                    "total_tasks": total,
+                    "assignee": ass,
+                    "total_tasks": tot,
                     "done_tasks": done,
                     "avg_rating": avg_r,
                     "sla_pct": sla_pct,
                     "disputes": disp,
                     "efficiency_score": efficiency,
                 })
-                total_tasks_all += total
+
+                total_tasks_all += tot
                 done_tasks_all += done
-                if avg_r > 0:
-                    ratings_sum += avg_r
-                    ratings_count += 1
+                all_ratings.extend(ratings)
                 total_disputes += disp
 
-            # Sort by efficiency_score descending
             leaderboard.sort(key=lambda x: x["efficiency_score"], reverse=True)
 
             result["leaderboard"] = leaderboard
             result["summary"] = {
                 "total_tasks": total_tasks_all,
                 "done_tasks": done_tasks_all,
-                "avg_rating": round(ratings_sum / ratings_count, 1) if ratings_count > 0 else 0.0,
+                "avg_rating": round(sum(all_ratings) / len(all_ratings), 1) if all_ratings else 0.0,
                 "avg_sla_pct": round(done_tasks_all / total_tasks_all * 100, 1) if total_tasks_all > 0 else 0.0,
                 "total_disputes": total_disputes,
             }
-            conn.close()
         except Exception as e:
             logger.error(f"get_kpi_analytics error: {e}")
 

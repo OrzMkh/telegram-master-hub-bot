@@ -1918,6 +1918,9 @@ document.addEventListener("DOMContentLoaded", () => {
         } else if (typeof fetchCitiesData === "function") {
             fetchCitiesData();
         }
+        if (typeof currentTaskSubtab !== "undefined" && currentTaskSubtab === "analytics") {
+            loadKpiAnalytics();
+        }
     }, 15000);
 });
 
