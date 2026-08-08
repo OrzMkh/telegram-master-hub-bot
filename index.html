@@ -87,43 +87,10 @@
                     <span class="badge">Выбор аналитики</span>
                 </div>
 
-                <!-- 1. Period Selector Block -->
+                <!-- 1. Category Switcher Block -->
                 <div class="card-box" style="margin-bottom: 20px;">
-                    <div class="period-selector-container">
-                        <!-- Quick Presets Pills + Custom Range Pill -->
-                        <div class="period-quick-presets">
-                            <button class="preset-pill" onclick="selectPeriodPreset('7days')">7 дней</button>
-                            <button class="preset-pill active" id="preset30" onclick="selectPeriodPreset('30days')">30 дней</button>
-                            <button class="preset-pill" onclick="selectPeriodPreset('90days')">90 дней</button>
-                            <button class="preset-pill" onclick="selectPeriodPreset('365days')">365 дней</button>
-                            <button class="preset-pill" id="btnCustomDateModal" onclick="openCustomDateModal()" style="border-color:var(--accent-purple); color:var(--accent-purple); font-weight:600;">📆 Точный период</button>
-                        </div>
-
-                        <!-- Year Navigator -->
-                        <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(15,23,42,0.8); padding:10px 14px; border-radius:12px; border:1px solid rgba(255,255,255,0.08); margin-top:4px;">
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <span style="font-size:16px;">📅</span>
-                                <span id="currentPeriodLabel" style="font-size:13px; font-weight:600;">Июль - Август 2026 (30 дней)</span>
-                            </div>
-                            <div style="display:flex; align-items:center; gap:6px;">
-                                <button class="nav-arrow-btn" onclick="shiftYear(-1)">‹</button>
-                                <span id="selectedYearLabel" style="font-size:13px; font-weight:700; color:var(--accent-purple);">2026</span>
-                                <button class="nav-arrow-btn" onclick="shiftYear(1)">›</button>
-                            </div>
-                        </div>
-
-                        <!-- Hidden select element for back-compatibility -->
-                        <select id="periodMonthSelect" style="display:none;" onchange="updateDashboardView()">
-                            <option value="2026-07" selected>Июль 2026</option>
-                            <option value="2026-08">Август 2026</option>
-                            <option value="2026-06">Июнь 2026</option>
-                            <option value="2026-05">Май 2026</option>
-                            <option value="2026-ALL">Весь 2026 год</option>
-                        </select>
-                    </div>
-
-                    <div style="margin-top: 16px;">
-                        <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:6px; font-weight:600;">🎯 2. Что смотреть будем:</label>
+                    <div>
+                        <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:8px; font-weight:600;">🎯 Что смотреть будем:</label>
                         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;">
                             <button class="btn category-btn active" id="btnCatBikes" onclick="selectDashboardCategory('bikes')" style="padding:12px; font-size:14px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:8px; border-radius:12px;">
                                 <span>🛵</span> Байки
@@ -131,6 +98,7 @@
                             <button class="btn category-btn" id="btnCatTasks" onclick="selectDashboardCategory('tasks')" style="padding:12px; font-size:14px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:8px; border-radius:12px;">
                                 <span>📋</span> Задачи
                             </button>
+                        </div>
                         <!-- Sub-category Switcher for Bikes (FlitGo vs Rich) -->
                         <div id="bikesSubCategoryBox" style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; padding:8px; background:rgba(15,23,42,0.8); border-radius:12px; border:1px solid rgba(255,255,255,0.08);">
                             <button class="btn subcat-btn active" id="btnBikesFlitGo" onclick="selectBikesSubCategory('flitgo')" style="padding:8px; font-size:12px; font-weight:600; border-radius:8px; background:rgba(56,189,248,0.2); color:var(--accent-blue); border:1px solid var(--accent-blue);">

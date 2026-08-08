@@ -647,18 +647,16 @@ async function updateDashboardView() {
                 const res = await fetch("/api/cities");
                 let cities = await res.json();
 
-                if (selectedYear === 2026) {
-                    totalBikes = cities.reduce((sum, c) => sum + (parseInt(c.total_bikes, 10) || 0), 0);
-                    let totalIssued = cities.reduce((sum, c) => sum + (parseInt(c.issued, 10) || 0), 0);
-                    brokenBikes = cities.reduce((sum, c) => sum + (parseInt(c.broken_bikes, 10) || 0), 0);
-                    onlineShare = totalBikes > 0 ? Math.min(100, Math.round(((totalIssued + brokenBikes) / totalBikes) * 100)) : 0;
-                }
+                totalBikes = cities.reduce((sum, c) => sum + (parseInt(c.total_bikes, 10) || 0), 0);
+                let totalIssued = cities.reduce((sum, c) => sum + (parseInt(c.issued, 10) || 0), 0);
+                brokenBikes = cities.reduce((sum, c) => sum + (parseInt(c.broken_bikes, 10) || 0), 0);
+                onlineShare = totalBikes > 0 ? Math.min(100, Math.round(((totalIssued + brokenBikes) / totalBikes) * 100)) : 0;
 
                 cities.sort((a, b) => (a.name.includes("Ташкент") ? -1 : b.name.includes("Ташкент") ? 1 : a.id - b.id));
 
                 citiesHTML = cities.map(c => {
-                    const iss = selectedYear === 2026 ? (c.issued || 0) : 0;
-                    const pct = selectedYear === 2026 ? (c.percent_online || 0) : 0;
+                    const iss = c.issued || 0;
+                    const pct = c.percent_online || 0;
                     return `
                     <div class="city-card" style="margin-bottom:10px;">
                         <div class="city-header">
