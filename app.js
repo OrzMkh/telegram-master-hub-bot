@@ -1993,11 +1993,12 @@ function scrollTabs(offset) {
 
 const defaultTabMeta = [
     { id: "overview", label: "Дашборд", icon: "📊" },
+    { id: "schedule", label: "График / ЗП", icon: "📅" },
+    { id: "payroll", label: "Налоги & ЗП", icon: "💰" },
     { id: "bikes", label: "Байки", icon: "🛵" },
     { id: "tasks", label: "Задачи", icon: "📋" },
     { id: "employees", label: "Доступы", icon: "👥" },
     { id: "rich", label: "Rich", icon: "📙" },
-    { id: "payroll", label: "Налоги & ЗП", icon: "💰" },
     { id: "bots", label: "Боты", icon: "⚙️" }
 ];
 
@@ -2008,6 +2009,12 @@ function applySavedTabOrder() {
     if (saved) {
         try {
             currentTabOrder = JSON.parse(saved);
+            // Auto-merge any new tabs that are missing from saved order
+            defaultTabMeta.forEach(meta => {
+                if (!currentTabOrder.includes(meta.id)) {
+                    currentTabOrder.push(meta.id);
+                }
+            });
         } catch (e) {
             currentTabOrder = defaultTabMeta.map(t => t.id);
         }
@@ -2032,12 +2039,21 @@ function openReorderTabsModal() {
     if (saved) {
         try {
             currentTabOrder = JSON.parse(saved);
+            defaultTabMeta.forEach(meta => {
+                if (!currentTabOrder.includes(meta.id)) {
+                    currentTabOrder.push(meta.id);
+                }
+            });
         } catch (e) {
             currentTabOrder = defaultTabMeta.map(t => t.id);
         }
     } else {
         currentTabOrder = defaultTabMeta.map(t => t.id);
     }
+
+    renderReorderList();
+    modal.classList.remove("hidden");
+}
 
     renderReorderList();
     modal.classList.remove("hidden");
@@ -2289,7 +2305,10 @@ function fmtMoney(n) {
     if (!n && n !== 0) return "—";
     return Math.round(n).toLocaleString("ru-RU") + " сум";
 }
-function fmtM(n) { return Math.round(n / 1_000_000 * 10) / 10 + "M"; }
+function fmtM(n) {
+    if (!n) return "0M";
+    return (n / 1_000_000).toFixed(1) + "M";
+}
 
 async function initScheduleCRM() {
     await loadScheduleMonths();
