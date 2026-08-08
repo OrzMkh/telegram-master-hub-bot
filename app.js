@@ -1059,7 +1059,7 @@ function renderTasksList() {
     if (filter === "active") tasks = tasks.filter(t => t.status !== "Done");
     if (filter === "done") tasks = tasks.filter(t => t.status === "Done");
     if (filter === "unrated") tasks = tasks.filter(t => t.status === "Done" && (!t.rating || t.rating === 0) && !t.is_disputed);
-    if (filter === "disputed") tasks = tasks.filter(t => t.is_disputed || (t.rating_comment && t.rating_comment.includes("Оспаривание") && !t.final_rating));
+    if (filter === "disputed") tasks = tasks.filter(t => t.is_disputed === true || t.status === "Disputed" || t.status === "Оспорена" || (t.rating_comment && t.rating_comment.trim().length > 0));
     if (filter === "rated") tasks = tasks.filter(t => t.status === "Done" && t.rating > 0 && !t.is_disputed);
 
     const countBadge = document.getElementById("taskCountBadge");

@@ -1059,10 +1059,11 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                     aut_idx = headers.index("Постановщик") if "Постановщик" in headers else 3
                     sla_idx = headers.index("Срок / SLA") if "Срок / SLA" in headers else 4
                     date_idx = headers.index("Дата создания") if "Дата создания" in headers else 5
-                    stat_idx = headers.index("Статус") if "Статус" in headers else 6
-                    init_rat_idx = headers.index("Первоначальная оценка") if "Первоначальная оценка" in headers else (headers.index("Оценка") if "Оценка" in headers else 7)
-                    disp_idx = headers.index("Причина оспаривания") if "Причина оспаривания" in headers else (headers.index("Комментарий / Оспаривание") if "Комментарий / Оспаривание" in headers else 8)
-                    final_rat_idx = headers.index("Итоговая оценка не меняется") if "Итоговая оценка не меняется" in headers else (headers.index("Последняя оценка") if "Последняя оценка" in headers else 9)
+                    disp_idx = 8
+                    for h_i, h in enumerate(headers):
+                        if "оспариван" in h.lower() or "комментарий" in h.lower():
+                            disp_idx = h_i
+                            break
 
                     for i, r in enumerate(rows[1:], start=1):
                         if not any(str(cell).strip() for cell in r):
@@ -1081,9 +1082,9 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                         except Exception:
                             final_num = 0
 
-                        is_disputed = bool(disp_val.strip() and not final_rat.strip())
                         status_val = r[stat_idx] if len(r) > stat_idx else "Active"
-                        if is_disputed:
+                        is_disputed = bool(disp_val.strip()) or (status_val.strip().lower() in ["disputed", "оспорена", "оспорено"])
+                        if is_disputed and not final_rat.strip():
                             status_val = "Disputed"
 
                         clean_id = str(r[id_idx]).replace("#", "").strip() if (len(r) > id_idx and str(r[id_idx]).strip()) else str(i)
