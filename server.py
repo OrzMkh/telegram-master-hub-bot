@@ -1423,9 +1423,10 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                         f"👑 <b>Оценка руководителя:</b> {stars_str} ({rating}/5)\n\n"
                         f"⚖️ <i>Исполнитель {tag_asgn} может оспорить эту оценку, если не согласен:</i>"
                     )
+                    clean_tag = (assignee or "").replace("@", "").strip()
                     keyboard = {
                         "inline_keyboard": [
-                            [{"text": "⚖️ Оспорить оценку", "callback_data": f"dispute_task_{task_id}"}]
+                            [{"text": "⚖️ Оспорить оценку", "callback_data": f"dispute_task_{task_id}_{clean_tag}"}]
                         ]
                     }
 
