@@ -914,7 +914,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
 
     def get_cities_data(self):
         default_cities_fallback = [
-            {"id": 1, "name": "Ташкент", "total_bikes": 1670, "has_bike_types": 0},
+            {"id": 1, "name": "Ташкент", "total_bikes": 50, "has_bike_types": 0},
             {"id": 2, "name": "Самарканд", "total_bikes": 200, "has_bike_types": 0},
             {"id": 3, "name": "Фергана", "total_bikes": 80, "has_bike_types": 0},
             {"id": 4, "name": "Андижан", "total_bikes": 50, "has_bike_types": 0},
@@ -2248,7 +2248,7 @@ def init_local_master_dbs():
             )
         """)
         default_cities = [
-            ("Ташкент", 1670, 0),
+            ("Ташкент", 50, 0),
             ("Самарканд", 200, 0),
             ("Фергана", 80, 0),
             ("Андижан", 50, 0),
