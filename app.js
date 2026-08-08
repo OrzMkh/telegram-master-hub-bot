@@ -2685,25 +2685,50 @@ window.exportScheduleExcel = exportScheduleExcel;
 window.sendScheduleToTelegram = sendScheduleToTelegram;
 
 document.addEventListener("DOMContentLoaded", () => {
-    // 👑 Auto-unlock immediately for owner @orzmkh without any password
-    try {
-        const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
-        const tgUsername = (tgUser?.username || "").toLowerCase();
-        const isOwnerOrzmkh = tgUsername === "orzmkh" || tgUsername.includes("orzmkh") || (tgUser?.first_name || "").toLowerCase().includes("orzu");
+    // Auth guard: overlay is hidden by default (style="display:none" in HTML).
+    // Show it ONLY if user is not @orzmkh and not already authenticated.
+    function initAuthGuard() {
+        try {
+            if (sessionStorage.getItem("master_hub_authenticated") === "true") {
+                return; // already authenticated this session — keep overlay hidden
+            }
 
-        if (isOwnerOrzmkh || sessionStorage.getItem("master_hub_authenticated") === "true") {
+            const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+            const tgUsername = (tgUser?.username || "").toLowerCase();
+            const firstName = (tgUser?.first_name || "").toLowerCase();
+            const isOwner = tgUsername === "orzmkh" || firstName.includes("orzu");
+
+            if (isOwner) {
+                sessionStorage.setItem("master_hub_authenticated", "true");
+                return; // owner — no password needed, overlay stays hidden
+            }
+
+            // Everyone else — show the password overlay
             const overlay = document.getElementById("authLockOverlay");
             if (overlay) {
-                overlay.classList.add("unlocked");
-                overlay.style.display = "none";
+                overlay.style.display = "flex";
+                const input = document.getElementById("authPasswordInput");
+                if (input) setTimeout(() => input.focus(), 100);
             }
-            sessionStorage.setItem("master_hub_authenticated", "true");
+        } catch(e) {
+            // Fallback: show overlay on any error
+            const overlay = document.getElementById("authLockOverlay");
+            if (overlay) overlay.style.display = "flex";
         }
-    } catch(e) { /* silent */ }
+    }
+
+    // Run immediately and also after Telegram WebApp is ready
+    initAuthGuard();
+    if (window.Telegram?.WebApp) {
+        window.Telegram.WebApp.ready();
+        // Re-check after WebApp initializes (user data may not be ready yet)
+        setTimeout(initAuthGuard, 500);
+    }
 
     // Pre-initialize schedule CRM so data is ready when user clicks tab
     setTimeout(() => {
         initScheduleCRM();
     }, 200);
 });
+
 

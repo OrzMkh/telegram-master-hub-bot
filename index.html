@@ -16,14 +16,14 @@
 </head>
 <body>
     <!-- Password Auth Lock Screen Overlay -->
-    <div id="authLockOverlay" class="auth-lock-overlay">
+    <div id="authLockOverlay" class="auth-lock-overlay" style="display:none;">
         <div class="auth-card">
             <div class="auth-icon-badge">🔒</div>
             <h2 class="auth-title">Master Hub</h2>
             <p class="auth-subtitle">Введите пароль для входа в Центр Управления</p>
             
             <div class="auth-input-group">
-                <input type="password" id="authPasswordInput" class="auth-input" placeholder="Пароль доступа..." autofocus autocomplete="off" onkeydown="if(event.key==='Enter') checkAuthPassword()">
+                <input type="password" id="authPasswordInput" class="auth-input" placeholder="Пароль доступа..." autocomplete="off" onkeydown="if(event.key==='Enter') checkAuthPassword()">
                 <button class="auth-submit-btn" onclick="checkAuthPassword()">🔓 Войти в систему</button>
             </div>
             <div id="authErrorMsg" class="auth-error-msg"></div>
