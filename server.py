@@ -1031,19 +1031,46 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             import gspread
             from google.oauth2.service_account import Credentials
             scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+            creds = None
             client = None
             if creds_json_env:
-                s_clean = creds_json_env.strip().strip("'").strip('"')
-                info = json.loads(s_clean)
-                if isinstance(info.get("private_key"), str):
-                    info["private_key"] = info["private_key"].replace("\\n", "\n")
-                creds = Credentials.from_service_account_info(info, scopes=scopes)
-                client = gspread.authorize(creds)
-            elif os.path.exists("credentials.json"):
+                try:
+                    s_clean = creds_json_env.strip().strip("'").strip('"')
+                    info = json.loads(s_clean)
+                    if isinstance(info.get("private_key"), str):
+                        info["private_key"] = info["private_key"].replace("\\n", "\n")
+                    creds = Credentials.from_service_account_info(info, scopes=scopes)
+                except Exception as e:
+                    logger.error(f"Failed to parse GOOGLE_CREDENTIALS_JSON: {e}")
+
+            if not creds and os.path.exists("credentials.json"):
                 creds = Credentials.from_service_account_file("credentials.json", scopes=scopes)
-                client = gspread.authorize(creds)
-            elif os.path.exists(os.path.join(BASE_DIR, "credentials.json")):
+            elif not creds and os.path.exists(os.path.join(BASE_DIR, "credentials.json")):
                 creds = Credentials.from_service_account_file(os.path.join(BASE_DIR, "credentials.json"), scopes=scopes)
+
+            if not creds and hasattr(self, "b64_creds") and self.b64_creds:
+                try:
+                    decoded = base64.b64decode(self.b64_creds).decode("utf-8")
+                    info = json.loads(decoded)
+                    creds = Credentials.from_service_account_info(info, scopes=scopes)
+                except Exception:
+                    pass
+
+            if not creds:
+                try:
+                    import sys
+                    task_bot_path = os.path.join(BASE_DIR, "..", "telegram-task-manager-bot")
+                    if os.path.exists(task_bot_path) and task_bot_path not in sys.path:
+                        sys.path.append(task_bot_path)
+                    import task_sheets_sync
+                    if hasattr(task_sheets_sync, "B64_CREDS"):
+                        decoded = base64.b64decode(task_sheets_sync.B64_CREDS).decode("utf-8")
+                        info = json.loads(decoded)
+                        creds = Credentials.from_service_account_info(info, scopes=scopes)
+                except Exception:
+                    pass
+
+            if creds:
                 client = gspread.authorize(creds)
 
             if client:
@@ -1059,11 +1086,14 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                     aut_idx = headers.index("Постановщик") if "Постановщик" in headers else 3
                     sla_idx = headers.index("Срок / SLA") if "Срок / SLA" in headers else 4
                     date_idx = headers.index("Дата создания") if "Дата создания" in headers else 5
+                    stat_idx = headers.index("Статус") if "Статус" in headers else 6
+                    init_rat_idx = headers.index("Первоначальная оценка") if "Первоначальная оценка" in headers else (headers.index("Оценка") if "Оценка" in headers else 7)
                     disp_idx = 8
                     for h_i, h in enumerate(headers):
                         if "оспариван" in h.lower() or "комментарий" in h.lower():
                             disp_idx = h_i
                             break
+                    final_rat_idx = headers.index("Итоговая оценка не меняется") if "Итоговая оценка не меняется" in headers else (headers.index("Последняя оценка") if "Последняя оценка" in headers else 9)
 
                     for i, r in enumerate(rows[1:], start=1):
                         if not any(str(cell).strip() for cell in r):
