@@ -1355,9 +1355,9 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                     final_col = headers.index("Итоговая оценка не меняется") + 1 if "Итоговая оценка не меняется" in headers else (headers.index("Последняя оценка") + 1 if "Последняя оценка" in headers else 10)
 
                     if not raw_init.strip() or raw_init.strip() == "0":
-                        sheet.update_cell(target_row, init_col, f"{rating}/5")
+                        sheet.update_cell(target_row, init_col, str(rating))
                         prev_init_rating = rating
-                    sheet.update_cell(target_row, final_col, f"{rating}/5")
+                    sheet.update_cell(target_row, final_col, str(rating))
 
                 TASKS_SHEETS_CACHE["timestamp"] = 0
         except Exception as e:
