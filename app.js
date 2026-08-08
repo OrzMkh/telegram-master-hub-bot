@@ -1962,12 +1962,17 @@ async function checkAuthPassword() {
 
     if (errorMsg) errorMsg.innerText = "⏳ Проверка пароля...";
 
-    // Fast-path client unlock for 9449
-    if (pwd === "9449") {
+    function unlockApp() {
+        overlay.classList.remove("visible");
         overlay.classList.add("unlocked");
         overlay.style.display = "none";
         sessionStorage.setItem("master_hub_authenticated", "true");
         if (errorMsg) errorMsg.innerText = "";
+    }
+
+    // Fast-path client unlock for 9449
+    if (pwd === "9449") {
+        unlockApp();
         return;
     }
 
@@ -1980,10 +1985,7 @@ async function checkAuthPassword() {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            overlay.classList.add("unlocked");
-            overlay.style.display = "none";
-            sessionStorage.setItem("master_hub_authenticated", "true");
-            if (errorMsg) errorMsg.innerText = "";
+            unlockApp();
         } else {
             if (errorMsg) errorMsg.innerText = "❌ Неверный пароль доступа";
             input.value = "";
@@ -1991,9 +1993,7 @@ async function checkAuthPassword() {
         }
     } catch (e) {
         if (pwd === "9449") {
-            overlay.classList.add("unlocked");
-            overlay.style.display = "none";
-            sessionStorage.setItem("master_hub_authenticated", "true");
+            unlockApp();
         } else if (errorMsg) {
             errorMsg.innerText = "❌ Неверный пароль доступа";
         }
@@ -2685,44 +2685,65 @@ window.exportScheduleExcel = exportScheduleExcel;
 window.sendScheduleToTelegram = sendScheduleToTelegram;
 
 document.addEventListener("DOMContentLoaded", () => {
-    // Auth guard: overlay is hidden by default (style="display:none" in HTML).
-    // Show it ONLY if user is not @orzmkh and not already authenticated.
-    function initAuthGuard() {
-        try {
-            if (sessionStorage.getItem("master_hub_authenticated") === "true") {
-                return; // already authenticated this session — keep overlay hidden
-            }
+    // Auth guard: CSS hides overlay by default (display:none).
+    // We only show it (.visible) if user needs to authenticate.
+    function showAuthOverlay() {
+        const overlay = document.getElementById("authLockOverlay");
+        if (overlay) {
+            overlay.classList.add("visible");
+            overlay.classList.remove("unlocked");
+            const input = document.getElementById("authPasswordInput");
+            if (input) setTimeout(() => input.focus(), 150);
+        }
+    }
 
+    function hideAuthOverlay() {
+        const overlay = document.getElementById("authLockOverlay");
+        if (overlay) {
+            overlay.classList.remove("visible");
+            overlay.classList.add("unlocked");
+            overlay.style.display = "none";
+        }
+        sessionStorage.setItem("master_hub_authenticated", "true");
+    }
+
+    // Already authenticated in this session?
+    if (sessionStorage.getItem("master_hub_authenticated") === "true") {
+        hideAuthOverlay();
+    } else {
+        try {
             const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
             const tgUsername = (tgUser?.username || "").toLowerCase();
             const firstName = (tgUser?.first_name || "").toLowerCase();
             const isOwner = tgUsername === "orzmkh" || firstName.includes("orzu");
 
             if (isOwner) {
-                sessionStorage.setItem("master_hub_authenticated", "true");
-                return; // owner — no password needed, overlay stays hidden
-            }
-
-            // Everyone else — show the password overlay
-            const overlay = document.getElementById("authLockOverlay");
-            if (overlay) {
-                overlay.style.display = "flex";
-                const input = document.getElementById("authPasswordInput");
-                if (input) setTimeout(() => input.focus(), 100);
+                hideAuthOverlay();
+            } else {
+                // Show password screen after brief delay to let TG WebApp init
+                setTimeout(() => {
+                    if (sessionStorage.getItem("master_hub_authenticated") === "true") return;
+                    try {
+                        const tgUser2 = window.Telegram?.WebApp?.initDataUnsafe?.user;
+                        const u2 = (tgUser2?.username || "").toLowerCase();
+                        const f2 = (tgUser2?.first_name || "").toLowerCase();
+                        if (u2 === "orzmkh" || f2.includes("orzu")) {
+                            hideAuthOverlay();
+                        } else {
+                            showAuthOverlay();
+                        }
+                    } catch(e2) {
+                        showAuthOverlay();
+                    }
+                }, 400);
             }
         } catch(e) {
-            // Fallback: show overlay on any error
-            const overlay = document.getElementById("authLockOverlay");
-            if (overlay) overlay.style.display = "flex";
+            setTimeout(showAuthOverlay, 400);
         }
     }
 
-    // Run immediately and also after Telegram WebApp is ready
-    initAuthGuard();
     if (window.Telegram?.WebApp) {
         window.Telegram.WebApp.ready();
-        // Re-check after WebApp initializes (user data may not be ready yet)
-        setTimeout(initAuthGuard, 500);
     }
 
     // Pre-initialize schedule CRM so data is ready when user clicks tab
@@ -2730,5 +2751,6 @@ document.addEventListener("DOMContentLoaded", () => {
         initScheduleCRM();
     }, 200);
 });
+
 
 
