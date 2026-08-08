@@ -1962,8 +1962,8 @@ async function checkAuthPassword() {
 
     if (errorMsg) errorMsg.innerText = "⏳ Проверка пароля...";
 
-    // Fast-path client unlock
-    if (pwd === "9449" || pwd === "orzmkh" || pwd === "admin" || pwd === "0000") {
+    // Fast-path client unlock for 9449
+    if (pwd === "9449") {
         overlay.classList.add("unlocked");
         overlay.style.display = "none";
         sessionStorage.setItem("master_hub_authenticated", "true");
@@ -1990,12 +1990,12 @@ async function checkAuthPassword() {
             input.focus();
         }
     } catch (e) {
-        if (pwd === "9449" || pwd === "orzmkh" || pwd === "admin") {
+        if (pwd === "9449") {
             overlay.classList.add("unlocked");
             overlay.style.display = "none";
             sessionStorage.setItem("master_hub_authenticated", "true");
         } else if (errorMsg) {
-            errorMsg.innerText = "❌ Ошибка подключения к серверу";
+            errorMsg.innerText = "❌ Неверный пароль доступа";
         }
     }
 }
@@ -2685,14 +2685,20 @@ window.exportScheduleExcel = exportScheduleExcel;
 window.sendScheduleToTelegram = sendScheduleToTelegram;
 
 document.addEventListener("DOMContentLoaded", () => {
-    // Auto-unlock if already logged in during this session
-    if (sessionStorage.getItem("master_hub_authenticated") === "true") {
+    // 👑 Auto-unlock immediately for owner @orzmkh without any password
+    const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+    const tgUsername = (tgUser?.username || "").toLowerCase();
+    const isOwnerOrzmkh = tgUsername === "orzmkh" || tgUsername.includes("orzmkh") || (tgUser?.first_name || "").toLowerCase().includes("orzu");
+
+    if (isOwnerOrzmkh || sessionStorage.getItem("master_hub_authenticated") === "true") {
         const overlay = document.getElementById("authLockOverlay");
         if (overlay) {
             overlay.classList.add("unlocked");
             overlay.style.display = "none";
         }
+        sessionStorage.setItem("master_hub_authenticated", "true");
     }
+
     applySavedTabOrder();
     initPayrollModule();
     // Pre-initialize schedule CRM so data is ready when user clicks tab
