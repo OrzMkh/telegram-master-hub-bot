@@ -917,7 +917,6 @@ function switchTab(targetTab) {
         }
     }
     if (targetTab === "employees") loadUsersData();
-    if (targetTab === "rich") loadRichData();
     if (targetTab === "payroll") loadPayrollData();
     if (targetTab === "bots") loadBotsData();
 }
