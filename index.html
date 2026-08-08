@@ -228,15 +228,21 @@
                         <div class="muted-text text-center" style="padding:20px;">⏳ Загрузка...</div>
                     </div>
 
-                    <!-- Chart Section -->
-                    <div style="margin-top:16px; display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-                        <div class="card-box" style="padding:14px;">
-                            <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">Выполнено задач</div>
-                            <canvas id="kpiDoneChart" height="100"></canvas>
+                    <!-- Chart Section: Stacked full-width cards -->
+                    <div style="margin-top:16px; display:flex; flex-direction:column; gap:14px;">
+                        <div class="card-box" style="padding:16px;">
+                            <div style="font-size:12px; font-weight:800; color:var(--yandex-yellow); margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+                                <span>📊 Выполнено задач (Топ-5)</span>
+                                <span class="badge" style="font-size:10px;">Количество</span>
+                            </div>
+                            <canvas id="kpiDoneChart" height="130"></canvas>
                         </div>
-                        <div class="card-box" style="padding:14px;">
-                            <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">Средний рейтинг</div>
-                            <canvas id="kpiRatingChart" height="100"></canvas>
+                        <div class="card-box" style="padding:16px;">
+                            <div style="font-size:12px; font-weight:800; color:var(--yandex-sky); margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+                                <span>⭐️ Средний рейтинг сотрудников</span>
+                                <span class="badge" style="font-size:10px; color:var(--yandex-sky); border-color:rgba(56,189,248,0.4);">Шкала 1-5</span>
+                            </div>
+                            <canvas id="kpiRatingChart" height="130"></canvas>
                         </div>
                     </div>
                 </div>
