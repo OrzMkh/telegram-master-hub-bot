@@ -73,10 +73,6 @@
                     <span class="tab-icon">⚙️</span>
                     <span class="tab-label">Боты</span>
                 </button>
-                <button class="tab-btn" data-tab="analytics" onclick="switchTab('analytics')">
-                    <span class="tab-icon">📈</span>
-                    <span class="tab-label">Аналитика</span>
-                </button>
             </nav>
             <button class="nav-arrow-btn" onclick="scrollTabs(200)" style="padding:6px 8px; font-size:16px;">›</button>
             <button class="nav-arrow-btn" onclick="openReorderTabsModal()" title="Настроить порядок вкладок" style="padding:6px 10px; font-size:14px; margin-left:4px; background:rgba(192,132,252,0.2); color:var(--accent-purple); border-color:var(--accent-purple);">⚙️</button>
@@ -197,27 +193,88 @@
                     <button class="btn-sm btn-primary-sm" id="btnOpenCreateTaskModal" onclick="openCreateTaskModal()">➕ Создать задачу</button>
                 </div>
 
-                <!-- Filter Bar for Tasks -->
-                <div class="card-box" style="margin-bottom:14px; padding:12px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                        <label style="font-size:12px; color:var(--text-muted); font-weight:600;">🔍 Фильтры задач:</label>
-                        <span id="taskCountBadge" class="badge" style="font-size:11px; color:var(--accent-purple);">Всего: 0</span>
+                <!-- Sub-tabs: List vs Analytics -->
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; padding:6px; background:rgba(15,23,42,0.8); border-radius:12px; border:1px solid rgba(255,255,255,0.08); margin-bottom:14px;">
+                    <button class="btn subcat-btn active" id="btnTaskSubtabList" onclick="switchTaskSubtab('list')" style="padding:10px; font-size:13px; font-weight:600; border-radius:8px; background:rgba(56,189,248,0.2); color:var(--accent-blue); border:1px solid var(--accent-blue);">
+                        📋 Список задач
+                    </button>
+                    <button class="btn subcat-btn" id="btnTaskSubtabAnalytics" onclick="switchTaskSubtab('analytics')" style="padding:10px; font-size:13px; font-weight:600; border-radius:8px; background:rgba(255,255,255,0.05); color:var(--text-muted); border:1px solid transparent;">
+                        📈 Аналитика & KPI
+                    </button>
+                </div>
+
+                <!-- SUB-TAB 1: Task List View -->
+                <div id="tasksSubtabListView">
+                    <!-- Filter Bar for Tasks -->
+                    <div class="card-box" style="margin-bottom:14px; padding:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                            <label style="font-size:12px; color:var(--text-muted); font-weight:600;">🔍 Фильтры задач:</label>
+                            <span id="taskCountBadge" class="badge" style="font-size:11px; color:var(--accent-purple);">Всего: 0</span>
+                        </div>
+                        <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:4px;">
+                            <button class="preset-pill active" id="btnFilterTaskAll" onclick="setTaskFilter('all')">Все</button>
+                            <button class="preset-pill" id="btnFilterTaskActive" onclick="setTaskFilter('active')">⚡️ В работе</button>
+                            <button class="preset-pill" id="btnFilterTaskDone" onclick="setTaskFilter('done')">✅ Завершённые</button>
+                            <button class="preset-pill" id="btnFilterTaskUnrated" onclick="setTaskFilter('unrated')">⏳ Не оценённые</button>
+                            <button class="preset-pill" id="btnFilterTaskDisputed" onclick="setTaskFilter('disputed')">⚖️ Оспоренные</button>
+                        </div>
                     </div>
-                    <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:4px;">
-                        <button class="preset-pill active" id="btnFilterTaskAll" onclick="setTaskFilter('all')">Все</button>
-                        <button class="preset-pill" id="btnFilterTaskActive" onclick="setTaskFilter('active')">⚡️ В работе</button>
-                        <button class="preset-pill" id="btnFilterTaskDone" onclick="setTaskFilter('done')">✅ Завершённые</button>
-                        <button class="preset-pill" id="btnFilterTaskUnrated" onclick="setTaskFilter('unrated')">⏳ Не оценённые</button>
-                        <button class="preset-pill" id="btnFilterTaskDisputed" onclick="setTaskFilter('disputed')">⚖️ Оспоренные</button>
+
+                    <div class="card-box">
+                        <div class="card-header">
+                            <h4>🎯 Активные и текущие задачи</h4>
+                        </div>
+                        <div id="tasksList" class="tasks-list">
+                            <div class="loading-spinner">Загрузка списка задач...</div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="card-box">
-                    <div class="card-header">
-                        <h4>🎯 Активные и текущие задачи</h4>
+                <!-- SUB-TAB 2: Analytics & KPI View -->
+                <div id="tasksSubtabAnalyticsView" style="display:none;">
+                    <!-- Period Filter -->
+                    <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; align-items:center; justify-content:space-between;">
+                        <div style="display:flex; gap:6px;">
+                            <button id="kpiBtn7" class="preset-pill" onclick="setKpiPeriod(7)">7 дн</button>
+                            <button id="kpiBtn30" class="preset-pill active" onclick="setKpiPeriod(30)">30 дн</button>
+                            <button id="kpiBtn90" class="preset-pill" onclick="setKpiPeriod(90)">90 дн</button>
+                            <button id="kpiBtn365" class="preset-pill" onclick="setKpiPeriod(365)">365 дн</button>
+                        </div>
+                        <span class="badge" id="kpiPeriodBadge" style="font-size:11px; color:var(--accent-blue);">30 дней</span>
                     </div>
-                    <div id="tasksList" class="tasks-list">
-                        <div class="loading-spinner">Загрузка списка задач...</div>
+
+                    <!-- Summary Stats Row -->
+                    <div id="kpiSummaryRow" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:16px;">
+                        <div class="card-box" style="padding:12px; text-align:center;">
+                            <div id="kpiStatTotal" style="font-size:22px; font-weight:700; color:var(--accent-blue);">—</div>
+                            <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Всего задач</div>
+                        </div>
+                        <div class="card-box" style="padding:12px; text-align:center;">
+                            <div id="kpiStatSla" style="font-size:22px; font-weight:700; color:var(--accent-emerald);">—</div>
+                            <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Средний SLA</div>
+                        </div>
+                        <div class="card-box" style="padding:12px; text-align:center;">
+                            <div id="kpiStatDisputes" style="font-size:22px; font-weight:700; color:var(--accent-rose);">—</div>
+                            <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Споры</div>
+                        </div>
+                    </div>
+
+                    <!-- Leaderboard -->
+                    <div style="font-size:13px; font-weight:600; color:var(--text-muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:0.05em;">🏆 Лидерборд сотрудников</div>
+                    <div id="kpiLeaderboard">
+                        <div class="muted-text text-center" style="padding:20px;">⏳ Загрузка...</div>
+                    </div>
+
+                    <!-- Chart Section -->
+                    <div style="margin-top:16px; display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                        <div class="card-box" style="padding:14px;">
+                            <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">Выполнено задач</div>
+                            <canvas id="kpiDoneChart" height="100"></canvas>
+                        </div>
+                        <div class="card-box" style="padding:14px;">
+                            <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">Средний рейтинг</div>
+                            <canvas id="kpiRatingChart" height="100"></canvas>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -621,57 +678,6 @@
             </div>
         </div>
     </div>
-
-    <!-- TAB: ANALYTICS / KPI -->
-    <section id="tab-analytics" class="tab-content" style="padding: 16px;">
-        <!-- Header -->
-        <div class="section-title" style="margin-bottom:16px;">
-            <h3>📈 Аналитика команды</h3>
-            <span class="badge" id="kpiPeriodBadge">30 дней</span>
-        </div>
-
-        <!-- Period Filter -->
-        <div style="display:flex; gap:8px; margin-bottom:18px; flex-wrap:wrap;">
-            <button id="kpiBtn7" class="preset-pill" onclick="setKpiPeriod(7)">7 дн</button>
-            <button id="kpiBtn30" class="preset-pill active" onclick="setKpiPeriod(30)">30 дн</button>
-            <button id="kpiBtn90" class="preset-pill" onclick="setKpiPeriod(90)">90 дн</button>
-            <button id="kpiBtn365" class="preset-pill" onclick="setKpiPeriod(365)">365 дн</button>
-        </div>
-
-        <!-- Summary Stats Row -->
-        <div id="kpiSummaryRow" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:18px;">
-            <div class="card-box" style="padding:12px; text-align:center;">
-                <div id="kpiStatTotal" style="font-size:22px; font-weight:700; color:var(--accent-blue);">—</div>
-                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Всего задач</div>
-            </div>
-            <div class="card-box" style="padding:12px; text-align:center;">
-                <div id="kpiStatSla" style="font-size:22px; font-weight:700; color:var(--accent-emerald);">—</div>
-                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Средний SLA</div>
-            </div>
-            <div class="card-box" style="padding:12px; text-align:center;">
-                <div id="kpiStatDisputes" style="font-size:22px; font-weight:700; color:var(--accent-rose);">—</div>
-                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Споры</div>
-            </div>
-        </div>
-
-        <!-- Leaderboard -->
-        <div style="font-size:13px; font-weight:600; color:var(--text-muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:0.05em;">🏆 Лидерборд сотрудников</div>
-        <div id="kpiLeaderboard">
-            <div class="muted-text text-center" style="padding:20px;">⏳ Загрузка...</div>
-        </div>
-
-        <!-- Chart Section -->
-        <div style="margin-top:20px; display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-            <div class="card-box" style="padding:14px;">
-                <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">Выполнено задач</div>
-                <canvas id="kpiDoneChart" height="100"></canvas>
-            </div>
-            <div class="card-box" style="padding:14px;">
-                <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">Средний рейтинг</div>
-                <canvas id="kpiRatingChart" height="100"></canvas>
-            </div>
-        </div>
-    </section>
 
     <script src="app.js"></script>
 </body>

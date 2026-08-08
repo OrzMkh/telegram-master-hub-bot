@@ -879,15 +879,62 @@ function switchTab(targetTab) {
 
     if (targetTab === "overview") updateDashboardView();
     if (targetTab === "bikes") loadBikesData();
-    if (targetTab === "tasks") loadTasksData();
+    if (targetTab === "tasks") {
+        if (typeof currentTaskSubtab !== "undefined" && currentTaskSubtab === "analytics") {
+            loadKpiAnalytics();
+        } else {
+            loadTasksData();
+        }
+    }
     if (targetTab === "employees") loadUsersData();
     if (targetTab === "rich") loadRichData();
     if (targetTab === "payroll") loadPayrollData();
     if (targetTab === "bots") loadBotsData();
-    if (targetTab === "analytics") loadKpiAnalytics();
 }
 
 window.switchTab = switchTab;
+
+let currentTaskSubtab = "list";
+
+function switchTaskSubtab(subtab) {
+    currentTaskSubtab = subtab;
+    const btnList = document.getElementById("btnTaskSubtabList");
+    const btnAnalytics = document.getElementById("btnTaskSubtabAnalytics");
+    const viewList = document.getElementById("tasksSubtabListView");
+    const viewAnalytics = document.getElementById("tasksSubtabAnalyticsView");
+
+    if (subtab === "list") {
+        if (btnList) {
+            btnList.style.background = "rgba(56,189,248,0.2)";
+            btnList.style.color = "var(--accent-blue)";
+            btnList.style.borderColor = "var(--accent-blue)";
+        }
+        if (btnAnalytics) {
+            btnAnalytics.style.background = "rgba(255,255,255,0.05)";
+            btnAnalytics.style.color = "var(--text-muted)";
+            btnAnalytics.style.borderColor = "transparent";
+        }
+        if (viewList) viewList.style.display = "block";
+        if (viewAnalytics) viewAnalytics.style.display = "none";
+        loadTasksData();
+    } else if (subtab === "analytics") {
+        if (btnAnalytics) {
+            btnAnalytics.style.background = "rgba(56,189,248,0.2)";
+            btnAnalytics.style.color = "var(--accent-blue)";
+            btnAnalytics.style.borderColor = "var(--accent-blue)";
+        }
+        if (btnList) {
+            btnList.style.background = "rgba(255,255,255,0.05)";
+            btnList.style.color = "var(--text-muted)";
+            btnList.style.borderColor = "transparent";
+        }
+        if (viewList) viewList.style.display = "none";
+        if (viewAnalytics) viewAnalytics.style.display = "block";
+        loadKpiAnalytics();
+    }
+}
+
+window.switchTaskSubtab = switchTaskSubtab;
 
 let currentTelegramUser = null;
 
