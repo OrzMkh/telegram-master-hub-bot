@@ -1326,10 +1326,10 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                             disp_idx = h_i
                             break
 
-                    if not task_text and len(row_vals) > text_idx:
-                        task_text = row_vals[text_idx]
-                    if not assignee and len(row_vals) > ass_idx:
-                        assignee = row_vals[ass_idx]
+                    if len(row_vals) > text_idx and row_vals[text_idx].strip():
+                        task_text = row_vals[text_idx].strip()
+                    if len(row_vals) > ass_idx and row_vals[ass_idx].strip():
+                        assignee = row_vals[ass_idx].strip()
 
                     raw_init = row_vals[init_rat_idx] if len(row_vals) > init_rat_idx else "0"
                     raw_disp = row_vals[disp_idx] if len(row_vals) > disp_idx else ""
