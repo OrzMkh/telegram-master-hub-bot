@@ -1107,11 +1107,11 @@ function renderTasksList() {
                             ${disputeHeader}
                             <div style="font-size:12px; font-weight:700; color:#c084fc; margin-bottom:8px;">⭐️ ${isDisputed ? 'Пересмотрите оценку за выполнение:' : 'Поставьте оценку за выполнение:'}</div>
                             <div style="display:flex; justify-content:center; gap:6px;">
-                                <button class="btn-sm" onclick="rateTaskAction(${t.id}, 1, event)" style="background:rgba(244,63,94,0.2); color:#f43f5e; border:1px solid #f43f5e; flex:1; font-weight:700; cursor:pointer;">⭐ 1</button>
-                                <button class="btn-sm" onclick="rateTaskAction(${t.id}, 2, event)" style="background:rgba(245,158,11,0.2); color:#f59e0b; border:1px solid #f59e0b; flex:1; font-weight:700; cursor:pointer;">⭐ 2</button>
-                                <button class="btn-sm" onclick="rateTaskAction(${t.id}, 3, event)" style="background:rgba(234,179,8,0.2); color:#eab308; border:1px solid #eab308; flex:1; font-weight:700; cursor:pointer;">⭐ 3</button>
-                                <button class="btn-sm" onclick="rateTaskAction(${t.id}, 4, event)" style="background:rgba(59,130,246,0.2); color:#3b82f6; border:1px solid #3b82f6; flex:1; font-weight:700; cursor:pointer;">⭐ 4</button>
-                                <button class="btn-sm" onclick="rateTaskAction(${t.id}, 5, event)" style="background:rgba(16,185,129,0.2); color:#10b981; border:1px solid #10b981; flex:1; font-weight:700; cursor:pointer;">⭐ 5</button>
+                                <button class="btn-sm" onclick="rateTaskAction('${t.id}', 1, event)" style="background:rgba(244,63,94,0.2); color:#f43f5e; border:1px solid #f43f5e; flex:1; font-weight:700; cursor:pointer;">⭐ 1</button>
+                                <button class="btn-sm" onclick="rateTaskAction('${t.id}', 2, event)" style="background:rgba(245,158,11,0.2); color:#f59e0b; border:1px solid #f59e0b; flex:1; font-weight:700; cursor:pointer;">⭐ 2</button>
+                                <button class="btn-sm" onclick="rateTaskAction('${t.id}', 3, event)" style="background:rgba(234,179,8,0.2); color:#eab308; border:1px solid #eab308; flex:1; font-weight:700; cursor:pointer;">⭐ 3</button>
+                                <button class="btn-sm" onclick="rateTaskAction('${t.id}', 4, event)" style="background:rgba(59,130,246,0.2); color:#3b82f6; border:1px solid #3b82f6; flex:1; font-weight:700; cursor:pointer;">⭐ 4</button>
+                                <button class="btn-sm" onclick="rateTaskAction('${t.id}', 5, event)" style="background:rgba(16,185,129,0.2); color:#10b981; border:1px solid #10b981; flex:1; font-weight:700; cursor:pointer;">⭐ 5</button>
                             </div>
                         </div>
                     `;
@@ -1135,7 +1135,7 @@ function renderTasksList() {
                     <span>⏱ SLA: ${getSlaBadge(t)}</span>
                 </div>
 
-                ${!isDone ? `<button class="btn-sm btn-primary-sm" onclick="completeTaskAction(${t.id}, event)" style="margin-top:10px; width:100%; cursor:pointer;">✅ Завершить задачу</button>` : ''}
+                ${!isDone ? `<button class="btn-sm btn-primary-sm" onclick="completeTaskAction('${t.id}', event)" style="margin-top:10px; width:100%; cursor:pointer;">✅ Завершить задачу</button>` : ''}
                 ${ratingHTML}
             </div>
         `;

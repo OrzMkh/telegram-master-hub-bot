@@ -1086,8 +1086,9 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                         if is_disputed:
                             status_val = "Disputed"
 
+                        clean_id = str(r[id_idx]).replace("#", "").strip() if (len(r) > id_idx and str(r[id_idx]).strip()) else str(i)
                         tasks.append({
-                            "id": r[id_idx] if len(r) > id_idx and r[id_idx] else i,
+                            "id": clean_id,
                             "task_text": r[text_idx] if len(r) > text_idx else "",
                             "assignee": r[ass_idx] if len(r) > ass_idx else "",
                             "author": r[aut_idx] if len(r) > aut_idx else "",
