@@ -42,6 +42,78 @@ try:
 except ImportError:
     HAS_POSTGRES = False
 
+# Google Sheets Embedded Service Account Base64 for Render
+B64_CREDS = (
+    "ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsCiAgInByb2plY3RfaWQiOiAiemlwcHktZm9saW8tNDk0NzExLWgwIiwK"
+    "ICAicHJpdmF0ZV9rZXlfaWQiOiAiODFlMDFjOWZkZjRmYjJiNmVjNWJiZjA3MDlmOWZlZDVmOWU5OTQxNCIsCiAgInByaXZh"
+    "dGVfa2V5IjogIi0tLS0tQkVHSU4gUFJJVkFURSBLRVktLS0tLVxuTUlJRXZRSUJBREFOQmdrcWhraUc5dzBCQVFFRkFBU0NC"
+    "S2N3Z2dTakFnRUFBb0lCQVFENVN4L1VrSHQrSXpRSlxudXJZTWMvUnBHRGRiUjhNTTMrYUZxZzZ6ZTYwUzc3eE8yT0Z6RytQ"
+    "L1VrVHpTSUFRSmdCQkN0SjZvZHF3WlFvVFxuK3JVZkpkN0djZVlkLzRLdGtOZ0RPZTkrM01jM0xOeFduV3pRSkFYZ0x3SXgz"
+    "VTZYYmRxWk9qNWJWckFndnNlaFxucVBvd2Y1UVM1ZW5md2szL2VqY0RwMzBuV0hMVHlnODN6YlVpaDczN21sZTJSUlducFBh"
+    "Zm44em5JVXRsUGxSYVxuc1V1ai8rVGpScy9jL0tKR3ArV0xOdmpsU1dad0dsV2NLV1BFbUI3QmhkKzZNUEp1Z244d0VXK255"
+    "L2g0NmlCWlxuM2lQemJZTVUwYThydFpYMCtLaDNlbVVqRTB6Slh6RG9RWDR1dHhhc3Eyend2T05qSTlTVjhHNHJCNzRlY3ht"
+    "SlxuZkRVejMrSjdBZ01CQUFFQ2dnRUFkOXlKaU9RUkpHUmJ0R1BiL1IvUmY2aGZrVmx2TEdVSkN2SnBrQjJpYVN6d1xuWHY3"
+    "RFkxdWhJNVZVUnA3d3lCTGxZMkNITStSWGFDR2tsMWVmNjBNM21qV1FYWk1KSzFldHJOdHh6ZzdzRUJqWFxuTmlRSitnZWY5"
+    "WnJVbE5JaDVBZ3pKeUpNY2hFN3JQcmR0Rm94TlJsYVFqM2VWYkl3VzJwUlFrWUpGRjVnRTNpc1xuS3lMcjZVNlA1TjVIS3dz"
+    "S096R1JCU3NWMzZuZ2ZyQWtGVzhRNzh2WkIzYjkwa0hBdjF0dFV2ODh2d25BajFOQVxuWWdLRmNPKytWKzliUkRhN2dabks0"
+    "RlFxRkVad1Z0bzI2Z3FXWkI5NHdMVUh4SFlTUkhHMVBwOUJpQVp5WFZ5VFxudGVRNXVYaTJhalh0d3I0Q29zMEIxM3MzbTZv"
+    "T3hPV2V1Z2FzK1BCSERRS0JnUUQ5YllTNlF2aHZsUUFIVlVFZ1xuMXRHSng1a1BDbGxhZGJyVi9MR1BwWDc1YWJRWG4yVDdp"
+    "RVZTNFVjMkhMZVJPbHgwbmFXcDUvMmp1N1J4NDRkWFxudFZLOHYxaXozZDA2RzZSc29oeVpoWU5hWUkvU0djQWpxSDBYeWJN"
+    "L1QyVklhcXI2djRPZ1dQczBpcldJaGVqbVxuaDEwaEExNUgvRXFkVytwVUpCL0YrNEZ4UHdLQmdRRDcwdDBUdHloeGN4RnVp"
+    "NzFFMFZDaWdMYkE5YlpmQWI5YVxuNnBKMHJTTDcreHM5NUJ0ZzJZSzJDSkZRYnBzQ0tDZkgvRTB0REUyNmJtWjNucHozSFMr"
+    "VHNUZEIrVkU1bzhZNFxueXBhTU1Ndi9wcFR5V1FMTkNlWit6b24veUZ6aGZXc1Nla0xjS09IZ24wWlJtaVJEd3JZczd0M0Mx"
+    "TzZERFVRdFxuUTN6WnJ4QUR4UUtCZ1FDNkwzL1hwK1FGZGg0elJQczRPUnB3Y3VlTUdUcFVMekk0akJHWFN5cmg2anFaTUUx"
+    "c1xuVGswLytxbnFvMlpwbDhyZEVnVG5zcnl4VWZIYnlpRmcycUlTY1RHbDAxWDRudDVKd1QvcHVpRXFnTTZvdUtwa1xuaUNCL0"
+    "hYeEhBdm1TSG12SEZIU0xsVlBZNGg5RVViMHR3RDAzUjlZNFpLNGN0YTZPYW91OVZHMWcyUUtCZ0U3aFxueVpDd2NnRy9xcmsz"
+    "R3EyZzU2SlBzVytXU0c5UVM5Rzk0dXliZzNidFBLWlJldVlHbkhSTEVNSGlNN29rTy9uZ1xuSllpejd2RTBQZkxBZzZqQXdy"
+    "Ti84ckErMmR1MVdwVlZtSDBIbUE5WDdoWlFIWmwrdlc0QllxYjE2MnBTOENSVVxubWZiKzgycDZXZnViempwUGx1TlNXN0w1"
+    "SWxGNDZWOUlZYWFLdVBpRkFvR0FZYWdlZlVCYmJLczVmOHhtakhIVFxub3BycTZjYWowNGNnMGtkVmdHOW1ocUtQcFA0YXV3"
+    "MDZHWkdxR0xtVDlHaFJwdlArTW1GemE1M3YxYlRIeURRRVxuMS9XalhJbnl4cWkvdnptYnd0SE1vNmdVR0V1UTZzSFJ1OWh5"
+    "d0JvOVBkQnNlQlhZaVcwWVlwTElkME5WQmNEUlxuMmFEeDUybG04VEtFbFFYMDdGNXFMdnM9XG4tLS0tLUVORCBQUklWQVRF"
+    "IEtFWS0tLS0tXG4iLAogICJjbGllbnRfZW1haWwiOiAidGdib3RodWJAemlwcHktZm9saW8tNDk0NzExLWgwLmlhbS5nc2Vy"
+    "dmljZWFjY291bnQuY29tIiwKICAiY2xpZW50X2lkIjogIjEwOTAwNTcyODkwNjg4NzY4NTU1NSIsCiAgImF1dGhfdXJpIjog"
+    "Imh0dHBzOi8vYWNjb3VudHMuZ29vZ2xlLmNvbS9vL29hdXRoMi9hdXRoIiwKICAidG9rZW5fdXJpIjogImh0dHBzOi8vb2F1"
+    "dGgyLmdvb2dsZWFwaXMuY29tL3Rva2VuIiwKICAiYXV0aF9wcm92aWRlcl94NTA5X2NlcnRfdXJsIjogImh0dHBzOi8vd3d3"
+    "Lmdvb2dsZWFwaXMuY29tL29hdXRoMi92MS9jZXJ0cyIsCiAgImNsaWVudF94NTA5X2NlcnRfdXJsIjogImh0dHBzOi8vd3d3"
+    "Lmdvb2dsZWFwaXMuY29tL3JvYm90L3YxL21ldGFkYXRhL3g1MDkvdGdib3RodWIlNDB6aXBweS1mb2xpby00OTQ3MTEtaDAu"
+    "aWFtLmdzZXJ2aWNlYWNjb3VudC5jb20iLAogICJ1bml2ZXJzZV9kb21haW4iOiAiZ29vZ2xlYXBpcy5jb20iCn0="
+)
+
+def get_google_sheets_client():
+    import gspread
+    from google.oauth2.service_account import Credentials
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    
+    creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    if creds_json_env:
+        try:
+            s_clean = creds_json_env.strip().strip("'").strip('"')
+            info = json.loads(s_clean)
+            if isinstance(info.get("private_key"), str):
+                info["private_key"] = info["private_key"].replace("\\n", "\n")
+            creds = Credentials.from_service_account_info(info, scopes=scopes)
+            return gspread.authorize(creds)
+        except Exception as e:
+            logger.error(f"Failed to parse GOOGLE_CREDENTIALS_JSON: {e}")
+
+    for loc in ["credentials.json", os.path.join(BASE_DIR, "credentials.json")]:
+        if os.path.exists(loc):
+            try:
+                creds = Credentials.from_service_account_file(loc, scopes=scopes)
+                return gspread.authorize(creds)
+            except Exception:
+                pass
+
+    if B64_CREDS:
+        try:
+            decoded = base64.b64decode(B64_CREDS).decode("utf-8")
+            info = json.loads(decoded)
+            creds = Credentials.from_service_account_info(info, scopes=scopes)
+            return gspread.authorize(creds)
+        except Exception as e:
+            logger.error(f"Failed B64_CREDS client: {e}")
+    return None
+
 class PostgresRow:
     def __init__(self, data):
         self.data = data
@@ -1023,56 +1095,11 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         return res
 
     def get_tasks_data(self):
-        creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
         now_time = time.time()
         if now_time - TASKS_SHEETS_CACHE["timestamp"] < 15 and TASKS_SHEETS_CACHE["data"]:
             return TASKS_SHEETS_CACHE["data"]
         try:
-            import gspread
-            from google.oauth2.service_account import Credentials
-            scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-            creds = None
-            client = None
-            if creds_json_env:
-                try:
-                    s_clean = creds_json_env.strip().strip("'").strip('"')
-                    info = json.loads(s_clean)
-                    if isinstance(info.get("private_key"), str):
-                        info["private_key"] = info["private_key"].replace("\\n", "\n")
-                    creds = Credentials.from_service_account_info(info, scopes=scopes)
-                except Exception as e:
-                    logger.error(f"Failed to parse GOOGLE_CREDENTIALS_JSON: {e}")
-
-            if not creds and os.path.exists("credentials.json"):
-                creds = Credentials.from_service_account_file("credentials.json", scopes=scopes)
-            elif not creds and os.path.exists(os.path.join(BASE_DIR, "credentials.json")):
-                creds = Credentials.from_service_account_file(os.path.join(BASE_DIR, "credentials.json"), scopes=scopes)
-
-            if not creds and hasattr(self, "b64_creds") and self.b64_creds:
-                try:
-                    decoded = base64.b64decode(self.b64_creds).decode("utf-8")
-                    info = json.loads(decoded)
-                    creds = Credentials.from_service_account_info(info, scopes=scopes)
-                except Exception:
-                    pass
-
-            if not creds:
-                try:
-                    import sys
-                    task_bot_path = os.path.join(BASE_DIR, "..", "telegram-task-manager-bot")
-                    if os.path.exists(task_bot_path) and task_bot_path not in sys.path:
-                        sys.path.append(task_bot_path)
-                    import task_sheets_sync
-                    if hasattr(task_sheets_sync, "B64_CREDS"):
-                        decoded = base64.b64decode(task_sheets_sync.B64_CREDS).decode("utf-8")
-                        info = json.loads(decoded)
-                        creds = Credentials.from_service_account_info(info, scopes=scopes)
-                except Exception:
-                    pass
-
-            if creds:
-                client = gspread.authorize(creds)
-
+            client = get_google_sheets_client()
             if client:
                 spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
                 sheet = spreadsheet.sheet1
@@ -1226,26 +1253,17 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 logger.error(f"Failed to complete task in sqlite: {e}")
 
         # Update status in Google Sheets & invalidate cache
-        creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
-        if creds_json_env:
-            try:
-                import gspread
-                from google.oauth2.service_account import Credentials
-                scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-                s_clean = creds_json_env.strip().strip("'").strip('"')
-                info = json.loads(s_clean)
-                if isinstance(info.get("private_key"), str):
-                    info["private_key"] = info["private_key"].replace("\\n", "\n")
-                creds = Credentials.from_service_account_info(info, scopes=scopes)
-                client = gspread.authorize(creds)
+        try:
+            client = get_google_sheets_client()
+            if client:
                 spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
                 sheet = spreadsheet.sheet1
                 headers = [str(h).strip() for h in sheet.row_values(1)]
                 id_col_vals = sheet.col_values(1)
                 target_row = None
-                str_id = str(task_id).strip()
+                str_id = str(task_id).replace("#", "").strip()
                 for idx, val in enumerate(id_col_vals):
-                    if str(val).strip() == str_id:
+                    if str(val).replace("#", "").strip() == str_id:
                         target_row = idx + 1
                         break
                 if target_row:
@@ -1257,8 +1275,9 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                         ass_idx = headers.index("Исполнитель") if "Исполнитель" in headers else 2
                         task_text = row_vals[text_idx] if len(row_vals) > text_idx else ""
                         assignee = row_vals[ass_idx] if len(row_vals) > ass_idx else ""
-            except Exception as e:
-                logger.error(f"Error completing task in Google Sheets: {e}")
+                TASKS_SHEETS_CACHE["timestamp"] = 0
+        except Exception as e:
+            logger.error(f"Error completing task in Google Sheets: {e}")
 
         # In server complete_task: Do NOT send premature Telegram message; wait for user rating
         logger.info(f"Task #{task_id} completed. Awaiting leader rating before group notification.")
@@ -1269,119 +1288,23 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         prev_init_rating = 0
         was_disputed = False
 
+        # 1. Fetch exact task details directly from SQLite database tasks.db first
         try:
-            import gspread
-            from google.oauth2.service_account import Credentials
-            import base64
+            if os.path.exists(TASKS_DB_PATH):
+                with sqlite3.connect(TASKS_DB_PATH) as conn:
+                    cursor = conn.cursor()
+                    clean_num = int(str(task_id).replace("#", "").strip())
+                    cursor.execute("SELECT task_text, assignee, author FROM tasks WHERE id = ?", (clean_num,))
+                    row = cursor.fetchone()
+                    if row:
+                        task_text = row[0] or ""
+                        assignee = row[1] or ""
+        except Exception as e_db:
+            logger.warning(f"Could not load task from SQLite: {e_db}")
 
-            scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-            creds = None
-            creds_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON")
-            if creds_json_env:
-                try:
-                    s_clean = creds_json_env.strip().strip("'").strip('"')
-                    info = json.loads(s_clean)
-                    if isinstance(info.get("private_key"), str):
-                        info["private_key"] = info["private_key"].replace("\\n", "\n")
-                    creds = Credentials.from_service_account_info(info, scopes=scopes)
-                except Exception as e:
-                    logger.error(f"Failed to parse GOOGLE_CREDENTIALS_JSON: {e}")
-
-            if not creds and hasattr(self, "b64_creds"):
-                try:
-                    decoded = base64.b64decode(self.b64_creds).decode("utf-8")
-                    info = json.loads(decoded)
-                    creds = Credentials.from_service_account_info(info, scopes=scopes)
-                except Exception:
-                    pass
-
-            # Fallback service account
-            if not creds:
-                b64_fallback = (
-                    "ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsCiAgInByb2plY3RfaWQiOiAiemlwcHktZm9saW8tNDk0NzExLWgwIiwK"
-                    "ICAicHJpdmF0ZV9rZXlfaWQiOiAiODFlMDFjOWZkZjRmYjJiNmVjNWJiZjA3MDlmOWZlZDVmOWU5OTQxNCIsCiAgInByaXZh"
-                    "dGVfa2V5IjogIi0tLS0tQkVHSU4gUFJJVkFURSBLRVktLS0tLVxuTUlJRXZRSUJBREFOQmdrcWhraUc5dzBCQVFFRkFBU0NC"
-                    "S2N3Z2dTakFnRUFBb0lCQVFENVN4L1VrSHQrSXpRSlxudXJZTWMvUnBHRGRiUjhNTTMrYUZxZzZ6ZTYwUzc3eE8yT0Z6RytQ"
-                    "L1VrVHpTSUFRSmdCQkN0SjZvZHF3WlFvVFxuK3JVZkpkN0djZVlkLzRLdGtOZ0RPZTkrM01jM0xOeFduV3pRSkFYZ0x3SXgz"
-                    "VTZYYmRxWk9qNWJWckFndnNlaFxucVBvd2Y1UVM1ZW5md2szL2VqY0RwMzBuV0hMVHlnODN6YlVpaDczN21sZTJSUlducFBh"
-                    "Zm44em5JVXRsUGxSYVxuc1V1ai8rVGpScy9jL0tKR3ArV0xOdmpsU1dad0dsV2NLV1BFbUI3QmhkKzZNUEp1Z244d0VXK255"
-                    "L2g0NmlCWlxuM2lQemJZTVUwYThydFpYMCtLaDNlbVVqRTB6Slh6RG9RWDR1dHhhc3Eyend2T05qSTlTVjhHNHJCNzRlY3ht"
-                    "SlxuZkRVejMrSjdBZ01CQUFFQ2dnRUFkOXlKaU9RUkpHUmJ0R1BiL1IvUmY2aGZrVmx2TEdVSkN2SnBrQjJpYVN6d1xuWHY3"
-                    "RFkxdWhJNVZVUnA3d3lCTGxZMkNITStSWGFDR2tsMWVmNjBNM21qV1FYWk1KSzFldHJOdHh6ZzdzRUJqWFxuTmlRSitnZWY5"
-                    "WnJVbE5JaDVBZ3pKeUpNY2hFN3JQcmR0Rm94TlJsYVFqM2VWYkl3VzJwUlFrWUpGRjVnRTNpc1xuS3lMcjZVNlA1TjVIS3dz"
-                    "S096R1JCU3NWMzZuZ2ZyQWtGVzhRNzh2WkIzYjkwa0hBdjF0dFV2ODh2d25BajFOQVxuWWdLRmNPKytWKzliUkRhN2dabks0"
-                    "RlFxRkVad1Z0bzI2Z3FXWkI5NHdMVUh4SFlTUkhHMVBwOUJpQVp5WFZ5VFxudGVRNXVYaTJhalh0d3I0Q29zMEIxM3MzbTZv"
-                    "T3hPV2V1Z2FzK1BCSERRS0JnUUQ5YllTNlF2aHZsUUFIVlVFZ1xuMXRHSng1a1BDbGxhZGJyVi9MR1BwWDc1YWJRWG4yVDdp"
-                    "RVZTNFVjMkhMZVJPbHgwbmFXcDUvMmp1N1J4NDRkWFxudFZLOHYxaXozZDA2RzZSc29oeVpoWU5hWUkvU0djQWpxSDBYeWJN"
-                    "L1QyVklhcXI2djRPZ1dQczBpcldJaGVqbVxuaDEwaEExNUgvRXFkVytwVUpCL0YrNEZ4UHdLQmdRRDcwdDBUdHloeGN4RnVp"
-                    "NzFFMFZDaWdMYkE5YlpmQWI5YVxuNnBKMHJTTDcreHM5NUJ0ZzJZSzJDSkZRYnBzQ0tDZkgvRTB0REUyNmJtWjNucHozSFMr"
-                    "VHNUZEIrVkU1bzhZNFxueXBhTU1Ndi9wcFR5V1FMTkNlWit6b24veUZ6aGZXc1Nla0xjS09IZ24wWlJtaVJEd3JZczd0M0Mx"
-                    "TzZERFVRdFxuUTN6WnJ4QUR4UUtCZ1FDNkwzL1hwK1FGZGg0elJQczRPUnB3Y3VlTUdUcFVMekk0akJHWFN5cmg2anFaTUUx"
-                    "c1xuVGswLytxbnFvMlpwbDhyZEVnVG5zcnl4VWZIYnlpRmcycUlTY1RHbDAxWDRudDVKd1QvcHVpRXFnTTZvdUtwa1xuaUNCL0"
-                    "hYeEhBdm1TSG12SEZIU0xsVlBZNGg5RVViMHR3RDAzUjlZNFpLNGN0YTZPYW91OVZHMWcyUUtCZ0U3aFxueVpDd2NnRy9xcmsz"
-                    "R3EyZzU2SlBzVytXU0c5UVM5Rzk0dXliZzNidFBLWlJldVlHbkhSTEVNSGlNN29rTy9uZ1xuSllpejd2RTBQZkxBZzZqQXdy"
-                    "Ti84ckErMmR1MVdwVlZtSDBIbUE5WDdoWlFIWmwrdlc0QllxYjE2MnBTOENSVVxubWZiKzgycDZXZnViempwUGx1TlNXN0w1"
-                    "SWxGNDZWOUlZYWFLdVBpRkFvR0FZYWdlZlVCYmJLczVmOHhtakhIVFxub3BycTZjYWowNGNnMGtkVmdHOW1ocUtQcFA0YXV3"
-                    "MDZHWkdxR0xtVDlHaFJwdlArTW1GemE1M3YxYlRIeURRRVxuMS9XalhJbnl4cWkvdnptYnd0SE1vNmdVR0V1UTZzSFJ1OWh5"
-                    "d0JvOVBkQnNlQlhZaVcwWVlwTElkME5WQmNEUlxuMmFEeDUybG04VEtFbFFYMDdGNXFMdnM9XG4tLS0tLUVORCBQUklWQVRF"
-                    "IEtFWS0tLS0tXG4iLAogICJjbGllbnRfZW1haWwiOiAidGdib3RodWJAemlwcHktZm9saW8tNDk0NzExLWgwIiwKICAicHJp"
-                    "dmF0ZV9rZXlfaWQiOiAiODFlMDFjOWZkZjRmYjJiNmVjNWJiZjA3MDlmOWZlZDVmOWU5OTQxNCIsCiAgInByaXZhdGVfa2V5"
-                    "IjogIi0tLS0tQkVHSU4gUFJJVkFURSBLRVktLS0tLVxuTUlJRXZRSUJBREFOQmdrcWhraUc5dzBCQVFFRkFBU0NCS2N3Z2dT"
-                    "akFnRUFBb0lCQVFENVN4L1VrSHQrSXpRSlxudXJZTWMvUnBHRGRiUjhNTTMrYUZxZzZ6ZTYwUzc3eE8yT0Z6RytQL1VrVHpT"
-                    "SUFRSmdCQkN0SjZvZHF3WlFvVFxuK3JVZkpkN0djZVlkLzRLdGtOZ0RPZTkrM01jM0xOeFduV3pRSkFYZ0x3SXgzVTZYYmRx"
-                    "Wk9qNWJWckFndnNlaFxucVBvd2Y1UVM1ZW5md2szL2VqY0RwMzBuV0hMVHlnODN6YlVpaDczN21sZTJSUlducFBhZm44em5J"
-                    "VXRsUGxSYVxuc1V1ai8rVGpScy9jL0tKR3ArV0xOdmpsU1dad0dsV2NLV1BFbUI3QmhkKzZNUEp1Z244d0VXK255L2g0NmlC"
-                    "WlxuM2lQemJZTVUwYThydFpYMCtLaDNlbVVqRTB6Slh6RG9RWDR1dHhhc3Eyend2T05qSTlTVjhHNHJCNzRlY3htSlxuZkRV"
-                    "ejMrSjdBZ01CQUFFQ2dnRUFkOXlKaU9RUkpHUmJ0R1BiL1IvUmY2aGZrVmx2TEdVSkN2SnBrQjJpYVN6d1xuWHY3RFkxdWhJ"
-                    "NVZVUnA3d3lCTGxZMkNITStSWGFDR2tsMWVmNjBNM21qV1FYWk1KSzFldHJOdHh6ZzdzRUJqWFxuTmlRSitnZWY5WnJVbE5J"
-                    "aDVBZ3pKeUpNY2hFN3JQcmR0Rm94TlJsYVFqM2VWYkl3VzJwUlFrWUpGRjVnRTNpc1xuS3lMcjZVNlA1TjVIS3dzS096R1JC"
-                    "U3NWMzZuZ2ZyQWtGVzhRNzh2WkIzYjkwa0hBdjF0dFV2ODh2d25BajFOQVxuWWdLRmNPKytWKzliUkRhN2dabks0RlFxRkVa"
-                    "d1Z0bzI2Z3FXWkI5NHdMVUh4SFlTUkhHMVBwOUJpQVp5WFZ5VFxudGVRNXVYaTJhalh0d3I0Q29zMEIxM3MzbTZvT3hPV2V1"
-                    "Z2FzK1BCSERRS0JnUUQ5YllTNlF2aHZsUUFIVlVFZ1xuMXRHSng1a1BDbGxhZGJyVi9MR1BwWDc1YWJRWG4yVDdpRVZTNFVj"
-                    "MkhMZVJPbHgwbmFXcDUvMmp1N1J4NDRkWFxudFZLOHYxaXozZDA2RzZSc29oeVpoWU5hWUkvU0djQWpxSDBYeWJNL1QyVklh"
-                    "cXI2djRPZ1dQczBpcldJaGVqbVxuaDEwaEExNUgvRXFkVytwVUpCL0YrNEZ4UHdLQmdRRDcwdDBUdHloeGN4RnVpNzFFMFZD"
-                    "aWdMYkE5YlpmQWI5YVxuNnBKMHJTTDcreHM5NUJ0ZzJZSzJDSkZRYnBzQ0tDZkgvRTB0REUyNmJtWjNucHozSFMrVHNUZEIr"
-                    "VkU1bzhZNFxueXBhTU1Ndi9wcFR5V1FMTkNlWit6b24veUZ6aGZXc1Nla0xjS09IZ24wWlJtaVJEd3JZczd0M0MxTzZERFVR"
-                    "dFxuUTN6WnJ4QUR4UUtCZ1FDNkwzL1hwK1FGZGg0elJQczRPUnB3Y3VlTUdUcFVMekk0akJHWFN5cmg2anFaTUUxc1xuVGsw"
-                    "LytxbnFvMlpwbDhyZEVnVG5zcnl4VWZIYnlpRmcycUlTY1RHbDAxWDRudDVKd1QvcHVpRXFnTTZvdUtwa1xuaUNCL0hYeEhB"
-                    "dm1TSG12SEZIU0xsVlBZNGg5RVViMHR3RDAzUjlZNFpLNGN0YTZPYW91OVZHMWcyUUtCZ0U3aFxueVpDd2NnRy9xcmszR3Ey"
-                    "ZzU2SlBzVytXU0c5UVM5Rzk0dXliZzNidFBLWlJldVlHbkhSTEVNSGlNN29rTy9uZ1xuSllpejd2RTBQZkxBZzZqQXdyTi84"
-                    "ckErMmR1MVdwVlZtSDBIbUE5WDdoWlFIWmwrdlc0QllxYjE2MnBTOENSVVxubWZiKzgycDZXZnViempwUGx1TlNXN0w1SWxG"
-                    "NDZWOUlZYWFLdVBpRkFvR0FZYWdlZlVCYmJLczVmOHhtakhIVFxub3BycTZjYWowNGNnMGtkVmdHOW1ocUtQcFA0YXV3MDZH"
-                    "WkdxR0xtVDlHaFJwdlArTW1GemE1M3YxYlRIeURRRVxuMS9XalhJbnl4cWkvdnptYnd0SE1vNmdVR0V1UTZzSFJ1OWh5d0Jv"
-                    "OVBkQnNlQlhZaVcwWVlwTElkME5WQmNEUlxuMmFEeDUybG04VEtFbFFYMDdGNXFMdnM9XG4tLS0tLUVORCBQUklWQVRFIEtF"
-                    "WS0tLS0tXG4iLAogICJjbGllbnRfZW1haWwiOiAidGdib3RodWJAemlwcHktZm9saW8tNDk0NzExLWgwLmlhbS5nc2Vydmlj"
-                    "ZWFjY291bnQuY29tIiwKICAiY2xpZW50X2lkIjogIjEwOTAwNTcyODkwNjg4NzY4NTU1NSIsCiAgImF1dGhfdXJpIjogImh0"
-                    "dHBzOi8vYWNjb3VudHMuZ29vZ2xlLmNvbS9vL29hdXRoMi9hdXRoIiwKICAidG9rZW5fdXJpIjogImh0dHBzOi8vb2F1dGgy"
-                    "Lmdvb2dsZWFwaXMuY29tL3Rva2VuIiwKICAiYXV0aF9wcm92aWRlcl94NTA5X2NlcnRfdXJsIjogImh0dHBzOi8vd3d3Lmdv"
-                    "b2dsZWFwaXMuY29tL29hdXRoMi92MS9jZXJ0cyIsCiAgImNsaWVudF94NTA5X2NlcnRfdXJsIjogImh0dHBzOi8vd3d3Lmdv"
-                    "b2dsZWFwaXMuY29tL3JvYm90L3YxL21ldGFkYXRhL3g1MDkvdGdib3RodWIlNDB6aXBweS1mb2xpby00OTQ3MTEtaDAuaWFt"
-                    "LmdzZXJ2aWNlYWNjb3VudC5jb20iLAogICJ1bml2ZXJzZV9kb21haW4iOiAiZ29vZ2xlYXBpcy5jb20iCn0="
-                )
-                try:
-                    decoded = base64.b64decode(b64_fallback).decode("utf-8")
-                    info = json.loads(decoded)
-                    creds = Credentials.from_service_account_info(info, scopes=scopes)
-                except Exception as e:
-                    logger.error(f"Fallback creds failed: {e}")
-
-            # 1. Fetch exact task details directly from SQLite database tasks.db first
-            try:
-                import sqlite3
-                if os.path.exists("tasks.db"):
-                    with sqlite3.connect("tasks.db") as conn:
-                        cursor = conn.cursor()
-                        clean_num = int(str(task_id).replace("#", "").strip())
-                        cursor.execute("SELECT task_text, assignee, author FROM tasks WHERE id = ?", (clean_num,))
-                        row = cursor.fetchone()
-                        if row:
-                            task_text = row[0] or ""
-                            assignee = row[1] or ""
-            except Exception as e_db:
-                logger.warning(f"Could not load task from SQLite: {e_db}")
-
-            if creds:
-                client = gspread.authorize(creds)
+        try:
+            client = get_google_sheets_client()
+            if client:
                 spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
                 sheet = spreadsheet.sheet1
                 headers = [str(h).strip() for h in sheet.row_values(1)]
@@ -1397,7 +1320,11 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                     text_idx = headers.index("Текст задачи") if "Текст задачи" in headers else 1
                     ass_idx = headers.index("Исполнитель") if "Исполнитель" in headers else 2
                     init_rat_idx = headers.index("Первоначальная оценка") if "Первоначальная оценка" in headers else (headers.index("Оценка") if "Оценка" in headers else 7)
-                    disp_idx = headers.index("Причина оспаривания") if "Причина оспаривания" in headers else (headers.index("Комментарий / Оспаривание") if "Комментарий / Оспаривание" in headers else 8)
+                    disp_idx = 8
+                    for h_i, h in enumerate(headers):
+                        if "оспариван" in h.lower() or "комментарий" in h.lower():
+                            disp_idx = h_i
+                            break
 
                     if not task_text and len(row_vals) > text_idx:
                         task_text = row_vals[text_idx]
@@ -1489,9 +1416,10 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             payload = {
                 "chat_id": chat_id,
                 "text": msg_text,
-                "parse_mode": "HTML",
-                "reply_markup": keyboard
+                "parse_mode": "HTML"
             }
+            if keyboard:
+                payload["reply_markup"] = keyboard
 
             req = urllib.request.Request(
                 f"https://api.telegram.org/bot{bot_token}/sendMessage",
@@ -1499,9 +1427,9 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 headers={"Content-Type": "application/json"}
             )
             urllib.request.urlopen(req)
+            logger.info(f"Task #{task_id} rating ({rating}/5) notification sent to Telegram group {chat_id}.")
         except Exception as e:
-            logger.error(f"Failed to send rating notification to Telegram: {e}")
-
+            logger.error(f"Failed to send rate notification to Telegram: {e}")
 
     def get_tasks_dynamics(self, date_from=None, date_to=None, assignee_filter=None):
         """Return per-day task dynamics for the selected period and assignee."""
