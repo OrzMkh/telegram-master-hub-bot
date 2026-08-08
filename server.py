@@ -2351,16 +2351,8 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
     # ─────────────────────────────────────────────
     SPREADSHEET_ID = "1cbFcg0LmUyQFlO2ymCNXPhbn2jnQf_tJZY9TH2nn10g"
 
-    # Cache {gid: {ts, data}}
     _schedule_cache = {}
 
-    MONTH_NAMES = {
-        1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
-        5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
-        9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь"
-    }
-
-    # Known dept separator rows (only dept name present, all other cells empty)
     DEPT_NAMES = {
         "руководитель": "Руководитель",
         "старшие": "Старшие",
@@ -2385,6 +2377,17 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
     def _gs_client(self):
         return get_google_sheets_client()
 
+    def _clean_num(self, v, default=0.0):
+        if v is None:
+            return default
+        s = str(v).replace('\xa0', '').replace(' ', '').replace(',', '.').strip()
+        import re as _re
+        s = _re.sub(r'[^\d.]', '', s)
+        try:
+            return float(s) if s else default
+        except Exception:
+            return default
+
     def get_schedule_months(self):
         try:
             gc = self._gs_client()
@@ -2392,22 +2395,40 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 return {"error": "Google Sheets недоступен", "months": []}
             sh = gc.open_by_key(self.SPREADSHEET_ID)
             months = []
+            
+            # Prioritize 2026, then 2025, then 2024
+            month_sheets = []
+            other_sheets = []
+            
             for ws in sh.worksheets():
                 title = ws.title.strip()
                 gid = ws.id
-                # Try to extract month/year from title
-                months.append({
-                    "gid": gid,
-                    "title": title,
-                    "label": title
-                })
-            return {"status": "ok", "months": months}
+                # Filter out irrelevant helper sheets
+                title_lower = title.lower()
+                if any(x in title_lower for x in ["labourcost", "импорт", "сводная", "учёты"]):
+                    continue
+                if "2026" in title:
+                    month_sheets.insert(0, {"gid": gid, "title": title, "label": title, "year": 2026})
+                elif "2025" in title:
+                    month_sheets.append({"gid": gid, "title": title, "label": title, "year": 2025})
+                elif "2024" in title:
+                    other_sheets.append({"gid": gid, "title": title, "label": title, "year": 2024})
+                else:
+                    other_sheets.append({"gid": gid, "title": title, "label": title, "year": 2020})
+
+            # Place June/July 2026 first
+            sorted_months = sorted(month_sheets, key=lambda m: (
+                0 if "июнь 2026" in m["title"].lower() else (
+                1 if "июль 2026" in m["title"].lower() else (
+                2 if "август 2026" in m["title"].lower() else 10
+            )))) + other_sheets
+
+            return {"status": "ok", "months": sorted_months}
         except Exception as e:
             logger.error(f"get_schedule_months error: {e}")
             return {"error": str(e), "months": []}
 
     def _decode_cell(self, val):
-        """Returns (type, hours): type ∈ shift|off|vacation|sick|new|partial"""
         if val is None or str(val).strip() == "":
             return ("off", 0)
         s = str(val).strip().upper()
@@ -2419,9 +2440,8 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             return ("sick", 0)
         if s in ("НОВ.", "НОВ", "NOV"):
             return ("new", 0)
-        # Numeric value = hours
         try:
-            h = float(s.replace(",", "."))
+            h = float(s.replace('\xa0', '').replace(' ', '').replace(",", "."))
             if h == 12.0:
                 return ("shift", 12)
             return ("partial", h)
@@ -2429,7 +2449,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             return ("unknown", 0)
 
     def get_schedule_data(self, gid=None):
-        cache_key = str(gid) if gid else "0"
+        cache_key = str(gid) if gid else "default"
         now_ts = time.time()
         cached = MasterHubHandler._schedule_cache.get(cache_key)
         if cached and (now_ts - cached["ts"]) < 60:
@@ -2440,38 +2460,40 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             if not gc:
                 return {"error": "Google Sheets недоступен", "employees": [], "departments": []}
             sh = gc.open_by_key(self.SPREADSHEET_ID)
+            
+            ws = None
             if gid:
-                ws = None
                 for w in sh.worksheets():
                     if str(w.id) == str(gid):
                         ws = w
                         break
+            if not ws:
+                # Default to June 2026 (gid=488723731) if exists, else first
+                for w in sh.worksheets():
+                    if w.id == 488723731:
+                        ws = w
+                        break
                 if not ws:
                     ws = sh.get_worksheet(0)
-            else:
-                ws = sh.get_worksheet(0)
 
             rows = ws.get_all_values()
             if not rows:
                 return {"error": "Лист пуст", "employees": [], "departments": []}
 
-            # Parse header rows to find date columns
-            # Row 0 = main header, Row 1 = sub-header with dates
             header_row_0 = rows[0] if len(rows) > 0 else []
             header_row_1 = rows[1] if len(rows) > 1 else []
 
-            # Find date column indices (format: DD.MM)
-            date_cols = []  # list of (col_idx, date_str)
+            import re as _re
+
+            # Find date columns
+            date_cols = []
             for ci, cell in enumerate(header_row_1):
                 cell_s = str(cell).strip()
-                import re as _re
                 if _re.match(r'\d{2}\.\d{2}', cell_s):
                     date_cols.append((ci, cell_s))
             if not date_cols:
-                # Try row 0
                 for ci, cell in enumerate(header_row_0):
                     cell_s = str(cell).strip()
-                    import re as _re
                     if _re.match(r'\d{2}\.\d{2}', cell_s):
                         date_cols.append((ci, cell_s))
 
@@ -2480,78 +2502,80 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             departments_seen = []
 
             for row_idx, row in enumerate(rows[2:], start=2):
-                if not row or len(row) == 0:
-                    continue
-                fio = str(row[0]).strip() if row[0] else ""
-                if not fio:
+                if not row:
                     continue
 
-                # Check if this is a dept separator row
-                fio_lower = fio.lower()
-                matched_dept = None
+                # Determine FIO column: Col 0 or Col 1
+                col0 = str(row[0]).strip() if len(row) > 0 else ""
+                col1 = str(row[1]).strip() if len(row) > 1 else ""
+
+                fio = col0
+                is_dept_header = False
+
+                # Check if col0 is dept header
+                col0_lower = col0.lower()
                 for dk, dv in self.DEPT_NAMES.items():
-                    if fio_lower == dk or fio_lower.startswith(dk):
-                        # Check other cells are empty = dept separator
-                        other_vals = [str(c).strip() for c in row[1:10] if str(c).strip()]
-                        if len(other_vals) == 0:
-                            matched_dept = dv
+                    if col0_lower == dk or col0_lower.startswith(dk):
+                        matched_dept = dv
+                        # If other cells are mostly empty
+                        filled_cells = [str(c).strip() for c in row[1:10] if str(c).strip()]
+                        if len(filled_cells) <= 1:
+                            current_dept = matched_dept
+                            if matched_dept not in departments_seen:
+                                departments_seen.append(matched_dept)
+                            is_dept_header = True
                             break
-                if matched_dept:
-                    current_dept = matched_dept
-                    if matched_dept not in departments_seen:
-                        departments_seen.append(matched_dept)
+                        else:
+                            # Format B: Col 0 is role, Col 1 is FIO
+                            current_dept = matched_dept
+                            fio = col1
+
+                if is_dept_header:
                     continue
 
-                # Filter legend/summary rows
-                import re as _re
-                if not _re.search(r'[a-zA-Zа-яА-ЯёЁa-zA-Z]{2,}', fio):
+                if not fio and col1:
+                    fio = col1
+
+                if not fio or not _re.search(r'[a-zA-Zа-яА-ЯёЁa-zA-Z]{2,}', fio):
                     continue
-                fio_lower2 = fio.lower()
-                if any(kw in fio_lower2 for kw in ["фио", "итого", "всего", "зарплаты", "легенда", "в,", "о,", "б,"]):
+
+                fio_lower = fio.lower()
+                if any(kw in fio_lower for kw in ["фио", "итого", "всего", "зарплаты", "легенда"]):
                     continue
-                # Pure numeric rows (totals)
                 if _re.match(r'^\d[\d\s]*$', fio):
                     continue
 
-                # --- Parse structured columns ---
-                def _safe_float(v, default=0.0):
-                    try:
-                        return float(str(v).replace(" ", "").replace(",", "."))
-                    except Exception:
-                        return default
-
-                def _safe_int(v, default=0):
-                    try:
-                        return int(float(str(v).replace(" ", "").replace(",", ".")))
-                    except Exception:
-                        return default
-
-                # Col B=1: Смены (факт целое)
-                shifts_fact_raw = _safe_float(row[1] if len(row) > 1 else 0)
-                # Col C=2: Точное кол-во смен (дробное)
-                shifts_exact = _safe_float(row[2] if len(row) > 2 else 0)
-                # Col D=3: Смен в начале (план)
-                shifts_plan = _safe_int(row[3] if len(row) > 3 else 15)
+                # Parse numbers with robust cleaner
+                shifts_fact_raw = self._clean_num(row[1] if len(row) > 1 else 0)
+                shifts_exact = self._clean_num(row[2] if len(row) > 2 else 0)
+                shifts_plan = self._clean_num(row[3] if len(row) > 3 else 15, default=15.0)
                 if shifts_plan <= 0:
-                    shifts_plan = 15
-                # Col E=4: Отпуски (дни)
-                vacation_days = _safe_int(row[4] if len(row) > 4 else 0)
-                # Col F=5: Больничные (дни)
-                sick_days = _safe_int(row[5] if len(row) > 5 else 0)
-                # Col G=6: Сумма больничного
-                sick_pay_amount = _safe_float(row[6] if len(row) > 6 else 0)
-                # Col H=7: Зарплата (ставка/смена)
-                shift_rate_col = _safe_float(row[7] if len(row) > 7 else 0)
-                # Col I=8: Оклад
-                salary_col = _safe_float(row[8] if len(row) > 8 else 0)
-                # Col J=9: Часы
-                hours_total = _safe_float(row[9] if len(row) > 9 else 0)
+                    shifts_plan = 15.0
+
+                vacation_days = int(self._clean_num(row[4] if len(row) > 4 else 0))
+                sick_days = int(self._clean_num(row[5] if len(row) > 5 else 0))
+                sick_pay_amount = self._clean_num(row[6] if len(row) > 6 else 0)
+                shift_rate_col = self._clean_num(row[7] if len(row) > 7 else 0)
+                salary_col = self._clean_num(row[8] if len(row) > 8 else 0)
+                hours_total = self._clean_num(row[9] if len(row) > 9 else 0)
+
+                # Fallback salary detection
+                if salary_col == 0.0:
+                    if shift_rate_col > 1000000:
+                        salary_col = shift_rate_col
+                    elif shift_rate_col > 0:
+                        salary_col = shift_rate_col * shifts_plan
+                    else:
+                        salary_col = 6000000.0  # standard fallback
+
+                if shift_rate_col == 0.0 and salary_col > 0:
+                    shift_rate_col = salary_col / shifts_plan
 
                 # Parse daily cells
                 daily = []
-                shifts_counted = 0
+                shifts_counted = 0.0
                 hours_counted = 0.0
-                vacation_counted = 0
+                vac_counted = 0
                 sick_counted = 0
 
                 for col_idx, date_str in date_cols:
@@ -2564,42 +2588,30 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                         "raw": str(cell_val).strip()
                     })
                     if dtype == "shift":
-                        shifts_counted += 1
+                        shifts_counted += 1.0
                         hours_counted += 12.0
                     elif dtype == "partial":
-                        shifts_counted_frac = dhours / 12.0
-                        shifts_counted += shifts_counted_frac
+                        shifts_counted += (dhours / 12.0)
                         hours_counted += dhours
                     elif dtype == "vacation":
-                        vacation_counted += 1
+                        vac_counted += 1
                     elif dtype == "sick":
                         sick_counted += 1
 
-                # Use spreadsheet values if available, else computed
-                if shifts_exact > 0:
-                    final_shifts_exact = shifts_exact
-                elif shifts_fact_raw > 0:
-                    final_shifts_exact = shifts_fact_raw
-                else:
-                    final_shifts_exact = round(shifts_counted, 1)
-
-                if hours_total > 0:
-                    final_hours = hours_total
-                else:
-                    final_hours = round(hours_counted, 1)
-
-                vac_days = vacation_days if vacation_days > 0 else vacation_counted
-                s_days = sick_days if sick_days > 0 else sick_counted
+                final_shifts_fact = shifts_exact if shifts_exact > 0 else (shifts_fact_raw if shifts_fact_raw > 0 else shifts_counted)
+                final_hours = hours_total if hours_total > 0 else hours_counted
+                final_vac = vacation_days if vacation_days > 0 else vac_counted
+                final_sick = sick_days if sick_days > 0 else sick_counted
 
                 employees.append({
                     "name": fio,
                     "dept": current_dept,
-                    "shifts_plan": shifts_plan,
-                    "shifts_fact": round(final_shifts_exact, 1),
-                    "shifts_extra": round(max(0, final_shifts_exact - shifts_plan), 1),
-                    "hours": final_hours,
-                    "vacation_days": vac_days,
-                    "sick_days": s_days,
+                    "shifts_plan": int(shifts_plan),
+                    "shifts_fact": round(final_shifts_fact, 1),
+                    "shifts_extra": round(max(0.0, final_shifts_fact - shifts_plan), 1),
+                    "hours": round(final_hours, 1),
+                    "vacation_days": final_vac,
+                    "sick_days": final_sick,
                     "sick_pay": round(sick_pay_amount),
                     "salary": round(salary_col),
                     "shift_rate": round(shift_rate_col),
@@ -2636,29 +2648,24 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
 
         for emp in employees:
             salary = emp["salary"]
-            if salary <= 0:
-                continue
-            shifts_plan = emp["shifts_plan"]
+            shifts_plan = emp["shifts_plan"] if emp["shifts_plan"] > 0 else 15
             shifts_fact = emp["shifts_fact"]
             sick_days = emp["sick_days"]
             vac_days = emp["vacation_days"]
             sick_pay = emp["sick_pay"]
+            rate_per_shift = emp["shift_rate"] if emp["shift_rate"] > 0 else (salary / shifts_plan)
 
-            if shifts_plan <= 0:
-                shifts_plan = 15
-            rate_per_shift = salary / shifts_plan
-
-            # Base pay: planned shifts at standard rate
-            planned_pay = min(shifts_fact, shifts_plan) * rate_per_shift
-            # Extra shifts bonus
-            extra_shifts = max(0, shifts_fact - shifts_plan)
+            # 1. Planned shifts pay
+            planned_pay = min(shifts_fact, float(shifts_plan)) * rate_per_shift
+            # 2. Extra shifts pay
+            extra_shifts = max(0.0, shifts_fact - float(shifts_plan))
             extra_pay = extra_shifts * rate_per_shift
-            # Total gross
-            gross = round(planned_pay + extra_pay)
-            # Sick pay from spreadsheet if present
+            # 3. Sick pay
             if sick_pay <= 0 and sick_days > 0:
                 sick_pay = round(rate_per_shift * 0.6 * sick_days)
-            # Tax: ROUND((gross + sick_pay) / 0.88 * 0.24, 0)
+            # 4. Gross earned
+            gross = round(planned_pay + extra_pay)
+            # 5. Tax (24% TK RUz): ROUND((gross + sick_pay) / 0.88 * 0.24, 0)
             total_earned = gross + sick_pay
             tax = round(total_earned / 0.88 * 0.24) if total_earned > 0 else 0
             net = total_earned - round(total_earned * 0.12)  # after 12% НДФЛ
@@ -2697,6 +2704,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             "totals": {k: round(v) for k, v in totals.items()},
             "total_employees": len(payroll_rows)
         }
+
 
 def init_local_master_dbs():
 

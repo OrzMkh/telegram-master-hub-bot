@@ -910,6 +910,7 @@ function switchTab(targetTab) {
     if (targetTab === "employees") loadUsersData();
     if (targetTab === "rich") loadRichData();
     if (targetTab === "payroll") loadPayrollData();
+    if (targetTab === "schedule") initScheduleCRM();
     if (targetTab === "bots") loadBotsData();
 }
 
@@ -2316,10 +2317,10 @@ async function loadScheduleMonths() {
                 opt.textContent = m.label;
                 sel.appendChild(opt);
             });
-            // Auto-select last sheet (most recent month)
-            const lastGid = d.months[d.months.length - 1].gid;
-            sel.value = lastGid;
-            await loadScheduleFull(lastGid);
+            // Auto-select first sheet (most recent prioritized month e.g. June/July 2026)
+            const firstGid = d.months[0].gid;
+            sel.value = firstGid;
+            await loadScheduleFull(firstGid);
         }
     } catch (e) {
         setSyncBadge("❌ Ошибка загрузки");
@@ -2646,3 +2647,10 @@ window.closeEmpDetail = closeEmpDetail;
 window.closeEmpDetailBtn = closeEmpDetailBtn;
 window.exportScheduleExcel = exportScheduleExcel;
 window.sendScheduleToTelegram = sendScheduleToTelegram;
+
+document.addEventListener("DOMContentLoaded", () => {
+    // Pre-initialize schedule CRM so data is ready when user clicks tab
+    setTimeout(() => {
+        initScheduleCRM();
+    }, 200);
+});
