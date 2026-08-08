@@ -572,28 +572,30 @@ def generate_payroll_excel_bytes(employees, summary):
 def send_telegram_file(chat_id, file_bytes, filename="Payroll_Report_TK_RUZ.xlsx"):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
     boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
-    
-    body = []
-    body.append(f"--{boundary}".encode())
-    body.append(f'Content-Disposition: form-data; name="chat_id"'.encode())
-    body.append(b"")
-    body.append(str(chat_id).encode())
-    
-    body.append(f"--{boundary}".encode())
-    body.append(f'Content-Disposition: form-data; name="caption"'.encode())
-    body.append(b"")
-    body.append("📊 Итоговая расчётная ведомость по ТК РУз (Yandex Eats)".encode("utf-8"))
-    
-    body.append(f"--{boundary}".encode())
-    body.append(f'Content-Disposition: form-data; name="document"; filename="{filename}"'.encode())
-    body.append(b"Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    body.append(b"")
-    body.append(file_bytes)
-    
-    body.append(f"--{boundary}--\r\n".encode())
-    
-    payload_data = b"\r\n".join(body)
-    
+
+    parts = []
+
+    # 1. chat_id
+    parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n{chat_id}".encode("utf-8"))
+
+    # 2. caption & parse_mode
+    caption_text = "📊 <b>Итоговая расчётная ведомость по ТК РУз (Yandex Eats)</b>"
+    parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n{caption_text}".encode("utf-8"))
+    parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"parse_mode\"\r\n\r\nHTML".encode("utf-8"))
+
+    # 3. document file with correct header and payload
+    doc_header = (
+        f"--{boundary}\r\n"
+        f"Content-Disposition: form-data; name=\"document\"; filename=\"{filename}\"\r\n"
+        f"Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n"
+    ).encode("utf-8")
+    parts.append(doc_header + file_bytes)
+
+    # 4. closing boundary
+    parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+
+    payload_data = b"\r\n".join(parts)
+
     req = urllib.request.Request(
         url,
         data=payload_data,
@@ -828,11 +830,43 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             else:
                 self.send_json_response({"error": "file_b64 is required"}, status=400)
         elif path == "/api/payroll/send_telegram":
-            chat_id = payload.get("chat_id")
-            if not chat_id:
-                chat_id = "560410710"
+            chat_id = payload.get("chat_id") or os.getenv("TARGET_CHAT_ID", "-1002638798110")
             try:
-                excel_bytes = generate_payroll_excel_bytes(LATEST_EXCEL_PARSED["employees"], LATEST_EXCEL_PARSED["summary"])
+                emps = LATEST_EXCEL_PARSED.get("employees") or []
+                summary = LATEST_EXCEL_PARSED.get("summary") or {}
+                if not emps:
+                    # Fallback to database payroll entries if no file uploaded yet
+                    db_entries = self.get_payroll_data()
+                    tot_adv, tot_net, tot_tax, tot_fot = 0, 0, 0, 0
+                    for row in db_entries:
+                        adv = row.get("advance_amount", 0) or 0
+                        sal = row.get("salary_amount", 0) or 0
+                        tx = row.get("tax_amount", 0) or 0
+                        ft = row.get("total_fot", 0) or (adv + sal + tx)
+                        tot_adv += adv
+                        tot_net += sal
+                        tot_tax += tx
+                        tot_fot += ft
+                        emps.append({
+                            "name": row.get("employee_name", "Сотрудник"),
+                            "role": "Сотрудник",
+                            "exact_shifts": 30,
+                            "sick_days": 0,
+                            "vacation_days": 0,
+                            "absent_days": 0,
+                            "advance": adv,
+                            "net_pay": sal,
+                            "tax": tx,
+                            "fot": ft
+                        })
+                    summary = {
+                        "total_employees": len(emps),
+                        "total_advance": tot_adv,
+                        "total_net": tot_net,
+                        "total_tax": tot_tax,
+                        "total_fot": tot_fot
+                    }
+                excel_bytes = generate_payroll_excel_bytes(emps, summary)
                 res_tg = send_telegram_file(chat_id, excel_bytes)
                 self.send_json_response({"status": "ok", "tg_response": res_tg})
             except Exception as e:

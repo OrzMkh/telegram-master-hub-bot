@@ -1590,15 +1590,22 @@ function initPayrollModule() {
             telegramBtn.disabled = true;
             telegramBtn.textContent = "⏳ Отправка...";
             try {
-                const res = await fetch("/api/payroll/send_telegram", { method: "POST" });
+                const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+                const targetChatId = tgUser ? tgUser.id : "-1002638798110";
+                const res = await fetch("/api/payroll/send_telegram", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ chat_id: targetChatId })
+                });
                 const d = await res.json();
                 if (d.status === "ok") {
-                    showToast("📲 Отчёт отправлен в Telegram!");
+                    showToast("📲 Отчёт успешно отправлен в Telegram!");
                 } else {
-                    showToast("❌ " + (d.error || "Ошибка отправки"));
+                    showToast("❌ " + (d.error || "Ошибка отправки в Telegram"));
                 }
             } catch (err) {
-                showToast("❌ Ошибка соединения");
+                console.error("Telegram send error:", err);
+                showToast("❌ Ошибка соединения при отправке");
             } finally {
                 telegramBtn.disabled = false;
                 telegramBtn.textContent = "📲 В Telegram";
