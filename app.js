@@ -345,34 +345,43 @@ function selectBikesSubCategory(sub) {
     const btnFlitGo = document.getElementById("btnBikesFlitGo");
     const btnRich = document.getElementById("btnBikesRich");
 
-    if (sub === "flitgo") {
-        if (btnFlitGo) {
-            btnFlitGo.style.background = "rgba(56,189,248,0.2)";
-            btnFlitGo.style.color = "var(--accent-blue)";
-            btnFlitGo.style.borderColor = "var(--accent-blue)";
-        }
-        if (btnRich) {
-            btnRich.style.background = "rgba(255,255,255,0.05)";
-            btnRich.style.color = "var(--text-muted)";
-            btnRich.style.borderColor = "transparent";
-        }
-    } else {
-        if (btnFlitGo) {
-            btnFlitGo.style.background = "rgba(255,255,255,0.05)";
-            btnFlitGo.style.color = "var(--text-muted)";
-            btnFlitGo.style.borderColor = "transparent";
-        }
-        if (btnRich) {
-            btnRich.style.background = "rgba(192,132,252,0.2)";
-            btnRich.style.color = "var(--accent-purple)";
-            btnRich.style.borderColor = "var(--accent-purple)";
-        }
+    if (btnFlitGo) {
+        btnFlitGo.removeAttribute("style");
+        btnFlitGo.classList.toggle("active", sub === "flitgo");
+    }
+    if (btnRich) {
+        btnRich.removeAttribute("style");
+        btnRich.classList.toggle("active", sub === "rich");
     }
 
     updateDashboardView();
 }
 
 window.selectBikesSubCategory = selectBikesSubCategory;
+
+// Access Subtab Switcher (Rich vs Fleet)
+function switchAccessSubtab(subtab) {
+    const subtabBtns = document.querySelectorAll(".access-subtab");
+    subtabBtns.forEach(b => {
+        const isTarget = b.getAttribute("data-subtab") === subtab;
+        b.classList.toggle("active", isTarget);
+    });
+
+    const richContent = document.getElementById("access-subtab-rich");
+    const fleetContent = document.getElementById("access-subtab-fleet");
+
+    if (subtab === "rich") {
+        if (richContent) richContent.style.display = "block";
+        if (fleetContent) fleetContent.style.display = "none";
+        loadRichUsers();
+    } else {
+        if (richContent) richContent.style.display = "none";
+        if (fleetContent) fleetContent.style.display = "block";
+        loadFleetUsers();
+    }
+}
+
+window.switchAccessSubtab = switchAccessSubtab;
 
 // Category Switcher for Dashboard
 function selectDashboardCategory(category) {
@@ -924,31 +933,20 @@ function switchTaskSubtab(subtab) {
     const viewList = document.getElementById("tasksSubtabListView");
     const viewAnalytics = document.getElementById("tasksSubtabAnalyticsView");
 
+    if (btnList) {
+        btnList.removeAttribute("style");
+        btnList.classList.toggle("active", subtab === "list");
+    }
+    if (btnAnalytics) {
+        btnAnalytics.removeAttribute("style");
+        btnAnalytics.classList.toggle("active", subtab === "analytics");
+    }
+
     if (subtab === "list") {
-        if (btnList) {
-            btnList.style.background = "rgba(56,189,248,0.2)";
-            btnList.style.color = "var(--accent-blue)";
-            btnList.style.borderColor = "var(--accent-blue)";
-        }
-        if (btnAnalytics) {
-            btnAnalytics.style.background = "rgba(255,255,255,0.05)";
-            btnAnalytics.style.color = "var(--text-muted)";
-            btnAnalytics.style.borderColor = "transparent";
-        }
         if (viewList) viewList.style.display = "block";
         if (viewAnalytics) viewAnalytics.style.display = "none";
         loadTasksData();
     } else if (subtab === "analytics") {
-        if (btnAnalytics) {
-            btnAnalytics.style.background = "rgba(56,189,248,0.2)";
-            btnAnalytics.style.color = "var(--accent-blue)";
-            btnAnalytics.style.borderColor = "var(--accent-blue)";
-        }
-        if (btnList) {
-            btnList.style.background = "rgba(255,255,255,0.05)";
-            btnList.style.color = "var(--text-muted)";
-            btnList.style.borderColor = "transparent";
-        }
         if (viewList) viewList.style.display = "none";
         if (viewAnalytics) viewAnalytics.style.display = "block";
         loadKpiAnalytics();
