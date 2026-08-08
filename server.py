@@ -572,30 +572,28 @@ def generate_payroll_excel_bytes(employees, summary):
 def send_telegram_file(chat_id, file_bytes, filename="Payroll_Report_TK_RUZ.xlsx"):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
     boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
-
-    parts = []
-
-    # 1. chat_id
-    parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n{chat_id}".encode("utf-8"))
-
-    # 2. caption & parse_mode
-    caption_text = "📊 <b>Итоговая расчётная ведомость по ТК РУз (Yandex Eats)</b>"
-    parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n{caption_text}".encode("utf-8"))
-    parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"parse_mode\"\r\n\r\nHTML".encode("utf-8"))
-
-    # 3. document file with correct header and payload
-    doc_header = (
-        f"--{boundary}\r\n"
-        f"Content-Disposition: form-data; name=\"document\"; filename=\"{filename}\"\r\n"
-        f"Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n"
-    ).encode("utf-8")
-    parts.append(doc_header + file_bytes)
-
-    # 4. closing boundary
-    parts.append(f"--{boundary}--\r\n".encode("utf-8"))
-
-    payload_data = b"\r\n".join(parts)
-
+    
+    body = []
+    body.append(f"--{boundary}".encode())
+    body.append(f'Content-Disposition: form-data; name="chat_id"'.encode())
+    body.append(b"")
+    body.append(str(chat_id).encode())
+    
+    body.append(f"--{boundary}".encode())
+    body.append(f'Content-Disposition: form-data; name="caption"'.encode())
+    body.append(b"")
+    body.append("📊 Итоговая расчётная ведомость по ТК РУз (Yandex Eats)".encode("utf-8"))
+    
+    body.append(f"--{boundary}".encode())
+    body.append(f'Content-Disposition: form-data; name="document"; filename="{filename}"'.encode())
+    body.append(b"Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    body.append(b"")
+    body.append(file_bytes)
+    
+    body.append(f"--{boundary}--\r\n".encode())
+    
+    payload_data = b"\r\n".join(body)
+    
     req = urllib.request.Request(
         url,
         data=payload_data,
@@ -698,19 +696,8 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             date_to = params.get("date_to", [None])[0]
             assignee = params.get("assignee", [None])[0]
             self.send_json_response(self.get_tasks_dynamics(date_from, date_to, assignee))
-        elif path == "/api/schedule/months":
-            self.send_json_response(self.get_schedule_months())
-        elif path == "/api/schedule/data":
-            params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            gid = params.get("gid", [None])[0]
-            self.send_json_response(self.get_schedule_data(gid))
-        elif path == "/api/schedule/payroll":
-            params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            gid = params.get("gid", [None])[0]
-            self.send_json_response(self.get_schedule_payroll(gid))
         else:
             self.send_error(404, "API Endpoint Not Found")
-
 
     def handle_api_post(self):
         content_length = int(self.headers.get("Content-Length", 0))
@@ -841,43 +828,11 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             else:
                 self.send_json_response({"error": "file_b64 is required"}, status=400)
         elif path == "/api/payroll/send_telegram":
-            chat_id = payload.get("chat_id") or os.getenv("TARGET_CHAT_ID", "-1002638798110")
+            chat_id = payload.get("chat_id")
+            if not chat_id:
+                chat_id = "560410710"
             try:
-                emps = LATEST_EXCEL_PARSED.get("employees") or []
-                summary = LATEST_EXCEL_PARSED.get("summary") or {}
-                if not emps:
-                    # Fallback to database payroll entries if no file uploaded yet
-                    db_entries = self.get_payroll_data()
-                    tot_adv, tot_net, tot_tax, tot_fot = 0, 0, 0, 0
-                    for row in db_entries:
-                        adv = row.get("advance_amount", 0) or 0
-                        sal = row.get("salary_amount", 0) or 0
-                        tx = row.get("tax_amount", 0) or 0
-                        ft = row.get("total_fot", 0) or (adv + sal + tx)
-                        tot_adv += adv
-                        tot_net += sal
-                        tot_tax += tx
-                        tot_fot += ft
-                        emps.append({
-                            "name": row.get("employee_name", "Сотрудник"),
-                            "role": "Сотрудник",
-                            "exact_shifts": 30,
-                            "sick_days": 0,
-                            "vacation_days": 0,
-                            "absent_days": 0,
-                            "advance": adv,
-                            "net_pay": sal,
-                            "tax": tx,
-                            "fot": ft
-                        })
-                    summary = {
-                        "total_employees": len(emps),
-                        "total_advance": tot_adv,
-                        "total_net": tot_net,
-                        "total_tax": tot_tax,
-                        "total_fot": tot_fot
-                    }
-                excel_bytes = generate_payroll_excel_bytes(emps, summary)
+                excel_bytes = generate_payroll_excel_bytes(LATEST_EXCEL_PARSED["employees"], LATEST_EXCEL_PARSED["summary"])
                 res_tg = send_telegram_file(chat_id, excel_bytes)
                 self.send_json_response({"status": "ok", "tg_response": res_tg})
             except Exception as e:
@@ -2346,381 +2301,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
 
         return result
 
-    # ─────────────────────────────────────────────
-    #  SCHEDULE / PAYROLL CRM  (Google Sheets Live)
-    # ─────────────────────────────────────────────
-    SPREADSHEET_ID = "1cbFcg0LmUyQFlO2ymCNXPhbn2jnQf_tJZY9TH2nn10g"
-
-    _schedule_cache = {}
-
-    DEPT_NAMES = {
-        "руководитель": "Руководитель",
-        "старшие": "Старшие",
-        "активаторы": "Активаторы",
-        "ресепшн": "Ресепшн",
-        "склад": "Склад",
-        "поддержка": "Поддержка",
-        "тм": "ТМ",
-        "модер": "Модер",
-        "лайвопс": "Лайвопс",
-        "клининг": "Клининг",
-        "лавка": "Лавка",
-        "специалист активации": "Активаторы",
-        "дежурный администратор": "Администраторы",
-        "сотрудник ахо": "Склад",
-        "специалист поддержки": "Поддержка",
-        "оператор тм": "ТМ",
-        "модератор смм": "Модер",
-        "руководитель отдела": "Руководитель",
-    }
-
-    def _gs_client(self):
-        return get_google_sheets_client()
-
-    def _clean_num(self, v, default=0.0):
-        if v is None:
-            return default
-        s = str(v).replace('\xa0', '').replace(' ', '').replace(',', '.').strip()
-        import re as _re
-        s = _re.sub(r'[^\d.]', '', s)
-        try:
-            return float(s) if s else default
-        except Exception:
-            return default
-
-    MONTH_MAP = {
-        "январ": 1, "феврал": 2, "март": 3, "апрел": 4,
-        "май": 5, "мая": 5, "июн": 6, "июл": 7,
-        "август": 8, "сентябр": 9, "октябр": 10, "ноябр": 11, "декабр": 12
-    }
-
-    def get_schedule_months(self):
-        try:
-            gc = self._gs_client()
-            if not gc:
-                return {"error": "Google Sheets недоступен", "months": []}
-            sh = gc.open_by_key(self.SPREADSHEET_ID)
-            months = []
-            
-            for ws in sh.worksheets():
-                title = ws.title.strip()
-                gid = ws.id
-                title_lower = title.lower()
-
-                # 1. Exclude helper and non-schedule sheets
-                if any(h in title_lower for h in ["labourcost", "импорт", "сводная", "учёт", "учет", "отгул", "брак", "отпуск"]):
-                    continue
-
-                # 2. Strict filter: ONLY sheets from 2026 onwards (2026, 2027, 2028...)
-                year_match = _re.search(r'\b(202[6-9]|20[3-9]\d)\b', title)
-                if not year_match:
-                    continue
-                year = int(year_match.group(1))
-
-                # 3. Detect month number
-                month_num = 0
-                for mk, mv in self.MONTH_MAP.items():
-                    if mk in title_lower:
-                        month_num = mv
-                        break
-
-                months.append({
-                    "gid": gid,
-                    "title": title,
-                    "label": title,
-                    "year": year,
-                    "month": month_num,
-                    "sort_key": year * 100 + month_num
-                })
-
-            # Sort descending: newest month (e.g. August 2026, July 2026, June 2026...) first
-            months.sort(key=lambda s: s["sort_key"], reverse=True)
-
-            return {"status": "ok", "months": months}
-        except Exception as e:
-            logger.error(f"get_schedule_months error: {e}")
-            return {"error": str(e), "months": []}
-
-    def _decode_cell(self, val):
-        if val is None or str(val).strip() == "":
-            return ("off", 0)
-        s = str(val).strip().upper()
-        if s == "В":
-            return ("off", 0)
-        if s == "О":
-            return ("vacation", 0)
-        if s == "Б":
-            return ("sick", 0)
-        if s in ("НОВ.", "НОВ", "NOV"):
-            return ("new", 0)
-        try:
-            h = float(s.replace('\xa0', '').replace(' ', '').replace(",", "."))
-            if h == 12.0:
-                return ("shift", 12)
-            return ("partial", h)
-        except Exception:
-            return ("unknown", 0)
-
-    def get_schedule_data(self, gid=None):
-        cache_key = str(gid) if gid else "default"
-        now_ts = time.time()
-        cached = MasterHubHandler._schedule_cache.get(cache_key)
-        if cached and (now_ts - cached["ts"]) < 60:
-            return cached["data"]
-
-        try:
-            gc = self._gs_client()
-            if not gc:
-                return {"error": "Google Sheets недоступен", "employees": [], "departments": []}
-            sh = gc.open_by_key(self.SPREADSHEET_ID)
-            
-            ws = None
-            if gid:
-                for w in sh.worksheets():
-                    if str(w.id) == str(gid):
-                        ws = w
-                        break
-            if not ws:
-                # Default to June 2026 (gid=488723731) if exists, else first
-                for w in sh.worksheets():
-                    if w.id == 488723731:
-                        ws = w
-                        break
-                if not ws:
-                    ws = sh.get_worksheet(0)
-
-            rows = ws.get_all_values()
-            if not rows:
-                return {"error": "Лист пуст", "employees": [], "departments": []}
-
-            header_row_0 = rows[0] if len(rows) > 0 else []
-            header_row_1 = rows[1] if len(rows) > 1 else []
-
-            import re as _re
-
-            # Find date columns
-            date_cols = []
-            for ci, cell in enumerate(header_row_1):
-                cell_s = str(cell).strip()
-                if _re.match(r'\d{2}\.\d{2}', cell_s):
-                    date_cols.append((ci, cell_s))
-            if not date_cols:
-                for ci, cell in enumerate(header_row_0):
-                    cell_s = str(cell).strip()
-                    if _re.match(r'\d{2}\.\d{2}', cell_s):
-                        date_cols.append((ci, cell_s))
-
-            current_dept = "Общий"
-            employees = []
-            departments_seen = []
-
-            for row_idx, row in enumerate(rows[2:], start=2):
-                if not row:
-                    continue
-
-                # Determine FIO column: Col 0 or Col 1
-                col0 = str(row[0]).strip() if len(row) > 0 else ""
-                col1 = str(row[1]).strip() if len(row) > 1 else ""
-
-                fio = col0
-                is_dept_header = False
-
-                # Check if col0 is dept header
-                col0_lower = col0.lower()
-                for dk, dv in self.DEPT_NAMES.items():
-                    if col0_lower == dk or col0_lower.startswith(dk):
-                        matched_dept = dv
-                        # If other cells are mostly empty
-                        filled_cells = [str(c).strip() for c in row[1:10] if str(c).strip()]
-                        if len(filled_cells) <= 1:
-                            current_dept = matched_dept
-                            if matched_dept not in departments_seen:
-                                departments_seen.append(matched_dept)
-                            is_dept_header = True
-                            break
-                        else:
-                            # Format B: Col 0 is role, Col 1 is FIO
-                            current_dept = matched_dept
-                            fio = col1
-
-                if is_dept_header:
-                    continue
-
-                if not fio and col1:
-                    fio = col1
-
-                if not fio or not _re.search(r'[a-zA-Zа-яА-ЯёЁa-zA-Z]{2,}', fio):
-                    continue
-
-                fio_lower = fio.lower()
-                if any(kw in fio_lower for kw in ["фио", "итого", "всего", "зарплаты", "легенда"]):
-                    continue
-                if _re.match(r'^\d[\d\s]*$', fio):
-                    continue
-
-                # Parse numbers with robust cleaner
-                shifts_fact_raw = self._clean_num(row[1] if len(row) > 1 else 0)
-                shifts_exact = self._clean_num(row[2] if len(row) > 2 else 0)
-                shifts_plan = self._clean_num(row[3] if len(row) > 3 else 15, default=15.0)
-                if shifts_plan <= 0:
-                    shifts_plan = 15.0
-
-                vacation_days = int(self._clean_num(row[4] if len(row) > 4 else 0))
-                sick_days = int(self._clean_num(row[5] if len(row) > 5 else 0))
-                sick_pay_amount = self._clean_num(row[6] if len(row) > 6 else 0)
-                shift_rate_col = self._clean_num(row[7] if len(row) > 7 else 0)
-                salary_col = self._clean_num(row[8] if len(row) > 8 else 0)
-                hours_total = self._clean_num(row[9] if len(row) > 9 else 0)
-
-                # Fallback salary detection
-                if salary_col == 0.0:
-                    if shift_rate_col > 1000000:
-                        salary_col = shift_rate_col
-                    elif shift_rate_col > 0:
-                        salary_col = shift_rate_col * shifts_plan
-                    else:
-                        salary_col = 6000000.0  # standard fallback
-
-                if shift_rate_col == 0.0 and salary_col > 0:
-                    shift_rate_col = salary_col / shifts_plan
-
-                # Parse daily cells
-                daily = []
-                shifts_counted = 0.0
-                hours_counted = 0.0
-                vac_counted = 0
-                sick_counted = 0
-
-                for col_idx, date_str in date_cols:
-                    cell_val = row[col_idx] if col_idx < len(row) else ""
-                    dtype, dhours = self._decode_cell(cell_val)
-                    daily.append({
-                        "date": date_str,
-                        "type": dtype,
-                        "hours": dhours,
-                        "raw": str(cell_val).strip()
-                    })
-                    if dtype == "shift":
-                        shifts_counted += 1.0
-                        hours_counted += 12.0
-                    elif dtype == "partial":
-                        shifts_counted += (dhours / 12.0)
-                        hours_counted += dhours
-                    elif dtype == "vacation":
-                        vac_counted += 1
-                    elif dtype == "sick":
-                        sick_counted += 1
-
-                final_shifts_fact = shifts_exact if shifts_exact > 0 else (shifts_fact_raw if shifts_fact_raw > 0 else shifts_counted)
-                final_hours = hours_total if hours_total > 0 else hours_counted
-                final_vac = vacation_days if vacation_days > 0 else vac_counted
-                final_sick = sick_days if sick_days > 0 else sick_counted
-
-                employees.append({
-                    "name": fio,
-                    "dept": current_dept,
-                    "shifts_plan": int(shifts_plan),
-                    "shifts_fact": round(final_shifts_fact, 1),
-                    "shifts_extra": round(max(0.0, final_shifts_fact - shifts_plan), 1),
-                    "hours": round(final_hours, 1),
-                    "vacation_days": final_vac,
-                    "sick_days": final_sick,
-                    "sick_pay": round(sick_pay_amount),
-                    "salary": round(salary_col),
-                    "shift_rate": round(shift_rate_col),
-                    "daily": daily
-                })
-
-            result = {
-                "status": "ok",
-                "sheet_title": ws.title,
-                "employees": employees,
-                "departments": departments_seen,
-                "date_cols": [d for _, d in date_cols],
-                "total_employees": len(employees)
-            }
-            MasterHubHandler._schedule_cache[cache_key] = {"ts": now_ts, "data": result}
-            return result
-        except Exception as e:
-            logger.error(f"get_schedule_data error: {e}")
-            import traceback
-            traceback.print_exc()
-            return {"error": str(e), "employees": [], "departments": []}
-
-    def get_schedule_payroll(self, gid=None):
-        data = self.get_schedule_data(gid)
-        if "error" in data and not data.get("employees"):
-            return data
-
-        employees = data.get("employees", [])
-        payroll_rows = []
-        totals = {
-            "fot": 0, "base_pay": 0, "extra_pay": 0,
-            "sick_total": 0, "tax_total": 0, "net_total": 0
-        }
-
-        for emp in employees:
-            salary = emp["salary"]
-            shifts_plan = emp["shifts_plan"] if emp["shifts_plan"] > 0 else 15
-            shifts_fact = emp["shifts_fact"]
-            sick_days = emp["sick_days"]
-            vac_days = emp["vacation_days"]
-            sick_pay = emp["sick_pay"]
-            rate_per_shift = emp["shift_rate"] if emp["shift_rate"] > 0 else (salary / shifts_plan)
-
-            # 1. Planned shifts pay
-            planned_pay = min(shifts_fact, float(shifts_plan)) * rate_per_shift
-            # 2. Extra shifts pay
-            extra_shifts = max(0.0, shifts_fact - float(shifts_plan))
-            extra_pay = extra_shifts * rate_per_shift
-            # 3. Sick pay
-            if sick_pay <= 0 and sick_days > 0:
-                sick_pay = round(rate_per_shift * 0.6 * sick_days)
-            # 4. Gross earned
-            gross = round(planned_pay + extra_pay)
-            # 5. Tax (24% TK RUz): ROUND((gross + sick_pay) / 0.88 * 0.24, 0)
-            total_earned = gross + sick_pay
-            tax = round(total_earned / 0.88 * 0.24) if total_earned > 0 else 0
-            net = total_earned - round(total_earned * 0.12)  # after 12% НДФЛ
-            fot = total_earned + tax
-
-            totals["base_pay"] += planned_pay
-            totals["extra_pay"] += extra_pay
-            totals["sick_total"] += sick_pay
-            totals["tax_total"] += tax
-            totals["net_total"] += net
-            totals["fot"] += fot
-
-            payroll_rows.append({
-                "name": emp["name"],
-                "dept": emp["dept"],
-                "salary": salary,
-                "shifts_plan": shifts_plan,
-                "shifts_fact": shifts_fact,
-                "shifts_extra": extra_shifts,
-                "hours": emp["hours"],
-                "vacation_days": vac_days,
-                "sick_days": sick_days,
-                "base_pay": round(planned_pay),
-                "extra_pay": round(extra_pay),
-                "gross": gross,
-                "sick_pay": sick_pay,
-                "tax": tax,
-                "net": net,
-                "fot": fot
-            })
-
-        return {
-            "status": "ok",
-            "sheet_title": data.get("sheet_title", ""),
-            "employees": payroll_rows,
-            "totals": {k: round(v) for k, v in totals.items()},
-            "total_employees": len(payroll_rows)
-        }
-
-
 def init_local_master_dbs():
-
     try:
         conn = sqlite3.connect(BIKES_DB_PATH)
         c = conn.cursor()
