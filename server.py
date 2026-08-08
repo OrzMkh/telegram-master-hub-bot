@@ -1333,6 +1333,21 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 except Exception as e:
                     logger.error(f"Fallback creds failed: {e}")
 
+            # 1. Fetch exact task details directly from SQLite database tasks.db first
+            try:
+                import sqlite3
+                if os.path.exists("tasks.db"):
+                    with sqlite3.connect("tasks.db") as conn:
+                        cursor = conn.cursor()
+                        clean_num = int(str(task_id).replace("#", "").strip())
+                        cursor.execute("SELECT task_text, assignee, author FROM tasks WHERE id = ?", (clean_num,))
+                        row = cursor.fetchone()
+                        if row:
+                            task_text = row[0] or ""
+                            assignee = row[1] or ""
+            except Exception as e_db:
+                logger.warning(f"Could not load task from SQLite: {e_db}")
+
             if creds:
                 client = gspread.authorize(creds)
                 spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
@@ -1340,9 +1355,9 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 headers = [str(h).strip() for h in sheet.row_values(1)]
                 id_col_vals = sheet.col_values(1)
                 target_row = None
-                str_id = str(task_id).strip()
+                str_id = str(task_id).replace("#", "").strip()
                 for idx, val in enumerate(id_col_vals):
-                    if str(val).strip() == str_id:
+                    if str(val).replace("#", "").strip() == str_id:
                         target_row = idx + 1
                         break
                 if target_row:
@@ -1352,8 +1367,11 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                     init_rat_idx = headers.index("Первоначальная оценка") if "Первоначальная оценка" in headers else (headers.index("Оценка") if "Оценка" in headers else 7)
                     disp_idx = headers.index("Причина оспаривания") if "Причина оспаривания" in headers else (headers.index("Комментарий / Оспаривание") if "Комментарий / Оспаривание" in headers else 8)
 
-                    task_text = row_vals[text_idx] if len(row_vals) > text_idx else ""
-                    assignee = row_vals[ass_idx] if len(row_vals) > ass_idx else ""
+                    if not task_text and len(row_vals) > text_idx:
+                        task_text = row_vals[text_idx]
+                    if not assignee and len(row_vals) > ass_idx:
+                        assignee = row_vals[ass_idx]
+
                     raw_init = row_vals[init_rat_idx] if len(row_vals) > init_rat_idx else "0"
                     raw_disp = row_vals[disp_idx] if len(row_vals) > disp_idx else ""
 
@@ -1364,6 +1382,10 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
 
                     if raw_disp.strip():
                         was_disputed = True
+
+                    # Update status column to Done
+                    stat_col = headers.index("Статус") + 1 if "Статус" in headers else 7
+                    sheet.update_cell(target_row, stat_col, "Done")
 
                     init_col = headers.index("Первоначальная оценка") + 1 if "Первоначальная оценка" in headers else 8
                     final_col = headers.index("Итоговая оценка не меняется") + 1 if "Итоговая оценка не меняется" in headers else (headers.index("Последняя оценка") + 1 if "Последняя оценка" in headers else 10)
