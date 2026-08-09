@@ -22,7 +22,7 @@ from telegram.ext import (
 
 logger = logging.getLogger("rich_bot")
 
-RICH_BOT_TOKEN = os.getenv("RICH_BOT_TOKEN", "8803642782:AAHiSsVxnleQIrOytksRHTVmH_vWWYtcKSg").strip()
+RICH_BOT_TOKEN = os.getenv("RICH_BOT_TOKEN", "").strip()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BIKES_DB_PATH = os.path.join(BASE_DIR, "bike_reports.db")
 TARGET_CHAT_ID = os.getenv("RICH_GROUP_CHAT_ID", os.getenv("GROUP_CHAT_ID", "-4851152519")).strip()
