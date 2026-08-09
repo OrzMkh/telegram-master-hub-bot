@@ -25,7 +25,7 @@ logger = logging.getLogger("rich_bot")
 RICH_BOT_TOKEN = os.getenv("RICH_BOT_TOKEN", "8803642782:AAHiSsVxnleQIrOytksRHTVmH_vWWYtcKSg").strip()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BIKES_DB_PATH = os.path.join(BASE_DIR, "bike_reports.db")
-TARGET_CHAT_ID = "-1002638798110"
+TARGET_CHAT_ID = os.getenv("RICH_GROUP_CHAT_ID", os.getenv("GROUP_CHAT_ID", "-4851152519")).strip()
 
 # Conversation states
 CITY, ISSUED, RETURNED, COMMENT = range(4)
@@ -259,16 +259,24 @@ async def finish_rich_report(update: Update, context: ContextTypes.DEFAULT_TYPE,
         await update.message.reply_text(summary_text, parse_mode="HTML")
 
     # Send report notification to master group
-    try:
-        group_msg = (
-            f"📊 <b>Новый отчёт по гибридам Rich</b>\n\n"
-            f"🏙 <b>Город:</b> {city}\n"
-            f"🛵 <b>На линии:</b> <b>{issued}</b> | 🏠 <b>На базе:</b> <b>{returned}</b>\n"
-            f"👤 <b>Отправил:</b> @{username}"
-        )
-        await context.bot.send_message(chat_id=TARGET_CHAT_ID, text=group_msg, parse_mode="HTML")
-    except Exception as e:
-        logger.error(f"Failed to send group notification: {e}")
+    targets = [TARGET_CHAT_ID]
+    if TARGET_CHAT_ID.startswith("-") and not TARGET_CHAT_ID.startswith("-100"):
+        targets.append(f"-100{TARGET_CHAT_ID[1:]}")
+
+    group_msg = (
+        f"📊 <b>Новый отчёт по гибридам Rich</b>\n\n"
+        f"🏙 <b>Город:</b> {city}\n"
+        f"🛵 <b>На линии:</b> <b>{issued}</b> | 🏠 <b>На базе:</b> <b>{returned}</b>\n"
+        f"👤 <b>Отправил:</b> @{username}"
+    )
+    for tid in targets:
+        try:
+            clean_tid = int(tid) if (str(tid).startswith("-") or str(tid).isdigit()) else tid
+            await context.bot.send_message(chat_id=clean_tid, text=group_msg, parse_mode="HTML")
+            logger.info(f"Rich report group notification sent to {clean_tid}")
+            break
+        except Exception as e:
+            logger.warning(f"Failed to send group notification to {tid}: {e}")
 
     return ConversationHandler.END
 
