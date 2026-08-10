@@ -673,6 +673,9 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 "rich_bot_url": RICH_BOT_URL if RICH_BOT_URL else "NOT_SET",
                 "fleet_bot_url": FLEET_BOT_URL if FLEET_BOT_URL else "NOT_SET",
                 "internal_secret_configured": bool(INTERNAL_API_SECRET),
+                "task_bot_token_prefix": TASK_BOT_TOKEN[:20] + "..." if TASK_BOT_TOKEN else "NOT_SET",
+                "task_chat_id": TASK_CHAT_ID,
+                "bot_token_prefix": BOT_TOKEN[:20] + "..." if BOT_TOKEN else "NOT_SET",
                 "rich_users_count": len(rich_users),
                 "rich_users": rich_users,
                 "fleet_users_count": len(fleet_users),
@@ -1497,6 +1500,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         try:
             bot_token = TASK_BOT_TOKEN
             chat_id = TASK_CHAT_ID
+            logger.info(f"Sending rating notification for task #{task_id} via token ...{bot_token[-10:] if bot_token else 'EMPTY'} to chat {chat_id}")
             stars_str = "⭐️" * rating
 
             safe_task = (task_text or f'Задача #{task_id}').replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
