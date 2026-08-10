@@ -1414,89 +1414,34 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         assignee = ""
         prev_init_rating = 0
         was_disputed = False
+        str_id = str(task_id).replace("#", "").strip()
 
-        # 1. Fetch exact task details directly from SQLite database tasks.db first
-        try:
-            if os.path.exists(TASKS_DB_PATH):
-                with sqlite3.connect(TASKS_DB_PATH) as conn:
-                    cursor = conn.cursor()
-                    clean_num = int(str(task_id).replace("#", "").strip())
-                    cursor.execute("SELECT task_text, assignee, author FROM tasks WHERE id = ?", (clean_num,))
-                    row = cursor.fetchone()
-                    if row:
-                        task_text = row[0] or ""
-                        assignee = row[1] or ""
-        except Exception as e_db:
-            logger.warning(f"Could not load task from SQLite: {e_db}")
+        # 1. Immediate lookup from memory cache
+        if TASKS_SHEETS_CACHE.get("data"):
+            for t in TASKS_SHEETS_CACHE["data"]:
+                if str(t.get("id", "")).replace("#", "").strip() == str_id:
+                    task_text = t.get("task_text", "")
+                    assignee = t.get("assignee", "")
+                    prev_init_rating = t.get("initial_rating", 0)
+                    was_disputed = t.get("is_disputed", False)
+                    break
 
-        try:
-            client = get_google_sheets_client()
-            if client:
-                spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
-                sheet = spreadsheet.sheet1
-                headers = [str(h).strip() for h in sheet.row_values(1)]
-                id_col_vals = sheet.col_values(1)
-                target_row = None
-                str_id = str(task_id).replace("#", "").strip()
-                for idx, val in enumerate(id_col_vals):
-                    if str(val).replace("#", "").strip() == str_id:
-                        target_row = idx + 1
-                        break
-                if target_row:
-                    row_vals = sheet.row_values(target_row)
-                    text_idx = headers.index("Текст задачи") if "Текст задачи" in headers else 1
-                    ass_idx = headers.index("Исполнитель") if "Исполнитель" in headers else 2
-                    init_rat_idx = headers.index("Первоначальная оценка") if "Первоначальная оценка" in headers else (headers.index("Оценка") if "Оценка" in headers else 7)
-                    disp_idx = 8
-                    for h_i, h in enumerate(headers):
-                        if "оспариван" in h.lower() or "комментарий" in h.lower():
-                            disp_idx = h_i
-                            break
+        # 2. Lookup in SQLite tasks.db fallback
+        if not task_text:
+            try:
+                if os.path.exists(TASKS_DB_PATH):
+                    with sqlite3.connect(TASKS_DB_PATH) as conn:
+                        cursor = conn.cursor()
+                        clean_num = int(str_id)
+                        cursor.execute("SELECT task_text, assignee, author FROM tasks WHERE id = ?", (clean_num,))
+                        row = cursor.fetchone()
+                        if row:
+                            task_text = row[0] or ""
+                            assignee = row[1] or ""
+            except Exception as e_db:
+                logger.warning(f"Could not load task from SQLite: {e_db}")
 
-                    if len(row_vals) > text_idx and row_vals[text_idx].strip():
-                        task_text = row_vals[text_idx].strip()
-                    if len(row_vals) > ass_idx and row_vals[ass_idx].strip():
-                        assignee = row_vals[ass_idx].strip()
-
-                    raw_init = row_vals[init_rat_idx] if len(row_vals) > init_rat_idx else "0"
-                    raw_disp = row_vals[disp_idx] if len(row_vals) > disp_idx else ""
-
-                    try:
-                        prev_init_rating = int(str(raw_init).replace("/5", "").strip())
-                    except Exception:
-                        prev_init_rating = 0
-
-                    if raw_disp.strip():
-                        was_disputed = True
-
-                    # Update status column to Done
-                    stat_col = headers.index("Статус") + 1 if "Статус" in headers else 7
-                    sheet.update_cell(target_row, stat_col, "Done")
-
-                    init_col = headers.index("Первоначальная оценка") + 1 if "Первоначальная оценка" in headers else 8
-                    final_col = headers.index("Итоговая оценка не меняется") + 1 if "Итоговая оценка не меняется" in headers else (headers.index("Последняя оценка") + 1 if "Последняя оценка" in headers else 10)
-
-                    if not raw_init.strip() or raw_init.strip() == "0":
-                        sheet.update_cell(target_row, init_col, str(rating))
-                        prev_init_rating = rating
-                    sheet.update_cell(target_row, final_col, str(rating))
-
-                TASKS_SHEETS_CACHE["timestamp"] = 0
-        except Exception as e:
-            logger.error(f"Failed to update task rating in Google Sheets: {e}")
-
-        # Update SQLite tasks.db to mark dispute resolved and finalize rating
-        try:
-            if os.path.exists(TASKS_DB_PATH):
-                with sqlite3.connect(TASKS_DB_PATH) as conn:
-                    cursor = conn.cursor()
-                    clean_num = int(str(task_id).replace("#", "").strip())
-                    cursor.execute("UPDATE tasks SET status = 'Done', is_disputed = 0, final_rating = ?, rating = ? WHERE id = ?", (rating, rating, clean_num))
-                    conn.commit()
-        except Exception as e_sql:
-            logger.error(f"Failed to finalize task #{task_id} in SQLite: {e_sql}")
-
-        # Send Telegram notification ONLY after rating is submitted
+        # 3. Send Telegram notification INSTANTLY
         try:
             bot_token = TASK_BOT_TOKEN
             chat_id = TASK_CHAT_ID
@@ -1566,10 +1511,54 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 data=json.dumps(payload).encode("utf-8"),
                 headers={"Content-Type": "application/json"}
             )
-            urllib.request.urlopen(req)
+            urllib.request.urlopen(req, timeout=5)
             logger.info(f"Task #{task_id} rating ({rating}/5) notification sent to Telegram group {chat_id}.")
         except Exception as e:
             logger.error(f"Failed to send rate notification to Telegram: {e}")
+
+        # 4. Background Google Sheets & SQLite update
+        def _bg_update_sheets_db():
+            try:
+                client = get_google_sheets_client()
+                if client:
+                    spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
+                    sheet = spreadsheet.sheet1
+                    headers = [str(h).strip() for h in sheet.row_values(1)]
+                    id_col_vals = sheet.col_values(1)
+                    target_row = None
+                    for idx, val in enumerate(id_col_vals):
+                        if str(val).replace("#", "").strip() == str_id:
+                            target_row = idx + 1
+                            break
+                    if target_row:
+                        stat_col = headers.index("Статус") + 1 if "Статус" in headers else 7
+                        sheet.update_cell(target_row, stat_col, "Done")
+
+                        init_col = headers.index("Первоначальная оценка") + 1 if "Первоначальная оценка" in headers else 8
+                        final_col = headers.index("Итоговая оценка не меняется") + 1 if "Итоговая оценка не меняется" in headers else (headers.index("Последняя оценка") + 1 if "Последняя оценка" in headers else 10)
+
+                        row_vals = sheet.row_values(target_row)
+                        raw_init = row_vals[init_col - 1] if len(row_vals) >= init_col else "0"
+                        if not raw_init.strip() or raw_init.strip() == "0":
+                            sheet.update_cell(target_row, init_col, str(rating))
+                        sheet.update_cell(target_row, final_col, str(rating))
+
+                    TASKS_SHEETS_CACHE["timestamp"] = 0
+            except Exception as e:
+                logger.error(f"Failed to update task rating in Google Sheets: {e}")
+
+            try:
+                if os.path.exists(TASKS_DB_PATH):
+                    with sqlite3.connect(TASKS_DB_PATH) as conn:
+                        cursor = conn.cursor()
+                        clean_num = int(str_id)
+                        cursor.execute("UPDATE tasks SET status = 'Done', is_disputed = 0, final_rating = ?, rating = ? WHERE id = ?", (rating, rating, clean_num))
+                        conn.commit()
+            except Exception as e_sql:
+                logger.error(f"Failed to finalize task #{task_id} in SQLite: {e_sql}")
+
+        threading.Thread(target=_bg_update_sheets_db, daemon=True).start()
+
 
     def get_tasks_dynamics(self, date_from=None, date_to=None, assignee_filter=None):
         """Return per-day task dynamics for the selected period and assignee."""
