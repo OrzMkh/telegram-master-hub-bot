@@ -666,6 +666,31 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             self.send_json_response(self.fetch_bot_users("rich"))
         elif path == "/api/users/fleet":
             self.send_json_response(self.fetch_bot_users("fleet"))
+        elif path == "/api/debug/test_tg":
+            bot_token = (TASK_BOT_TOKEN or BOT_TOKEN or "").strip()
+            chat_id = TASK_CHAT_ID
+            test_payload = {
+                "chat_id": chat_id,
+                "text": "⭐️ ТЕСТ ИЗ СЕРВЕРА MASTER HUB RENDER!",
+                "parse_mode": "HTML"
+            }
+            try:
+                req = urllib.request.Request(
+                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                    data=json.dumps(test_payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"}
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    body = resp.read().decode("utf-8")
+                    self.send_json_response({"ok": True, "status": resp.status, "body": json.loads(body)})
+            except Exception as e:
+                err = str(e)
+                if hasattr(e, "read"):
+                    try:
+                        err += " | " + e.read().decode("utf-8")
+                    except Exception:
+                        pass
+                self.send_json_response({"ok": False, "error": err, "bot_token_prefix": bot_token[:20], "chat_id": chat_id}, status=500)
         elif path == "/api/debug/bots":
             rich_users = self.fetch_bot_users("rich")
             fleet_users = self.fetch_bot_users("fleet")
@@ -790,8 +815,8 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             rating = payload.get("rating", 5)
             comment = payload.get("rating_comment", "")
             if task_id:
-                self.rate_task(task_id, rating, comment)
-                self.send_json_response({"status": "ok"})
+                tg_res = self.rate_task(task_id, rating, comment)
+                self.send_json_response({"status": "ok", "tg_result": tg_res})
             else:
                 self.send_json_response({"error": "Task ID required"}, status=400)
         elif path == "/api/warehouse/adjust":
@@ -1514,6 +1539,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
                 logger.info(f"Task #{task_id} rating ({rating}/5) notification sent to Telegram group {chat_id}. Response: {resp.status}")
+                tg_result = {"ok": True, "status": resp.status}
         except Exception as e:
             err_msg = str(e)
             if hasattr(e, 'read'):
@@ -1522,6 +1548,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 except Exception:
                     pass
             logger.error(f"Failed to send rate notification to Telegram: {err_msg}")
+            tg_result = {"ok": False, "error": err_msg}
 
         # 4. Background Google Sheets & SQLite update
         def _bg_update_sheets_db():
@@ -1565,6 +1592,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 logger.error(f"Failed to finalize task #{task_id} in SQLite: {e_sql}")
 
         threading.Thread(target=_bg_update_sheets_db, daemon=True).start()
+        return tg_result
 
 
     def get_tasks_dynamics(self, date_from=None, date_to=None, assignee_filter=None):
