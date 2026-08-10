@@ -7,13 +7,21 @@ import urllib.request
 import json
 import logging
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv не установлен, читаем из окружения
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("Watchdog")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CLOUDFLARED_PATH = os.path.join(BASE_DIR, "cloudflared.exe")
-BOT_TOKEN = "8951006941:AAH2Wc2j2AH1aCvui1Bflr7puDStzHtwNNI"
-PORT = 8085
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+if not BOT_TOKEN:
+    logger.warning("BOT_TOKEN is not set in .env. Telegram Menu Button updates will be skipped.")
+PORT = int(os.getenv("PORT", "8085"))
 
 def update_telegram_menu_button(web_app_url):
     try:

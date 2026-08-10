@@ -18,8 +18,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_APP_DIR = os.path.join(BASE_DIR, "web_app")
 BIKES_DB_PATH = os.path.join(BASE_DIR, "..", "telegram-bike-report-bot", "bike_reports.db")
 TASKS_DB_PATH = os.path.join(BASE_DIR, "..", "telegram-task-manager-bot", "tasks.db")
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8951006941:AAH2Wc2j2AH1aCvui1Bflr7puDStzHtwNNI").strip()
-MASTER_APP_PASSWORD = os.getenv("MASTER_APP_PASSWORD", "7890").strip()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+MASTER_APP_PASSWORD = os.getenv("MASTER_APP_PASSWORD", "").strip()
+TASK_BOT_TOKEN = os.getenv("TASK_BOT_TOKEN") or BOT_TOKEN
+TASK_CHAT_ID = os.getenv("TASK_CHAT_ID", "-1002638798110").strip()
 
 try:
     import psycopg2
@@ -155,9 +157,9 @@ def init_tables():
         if c.fetchone()[0] == 0:
             now_str = datetime.datetime.now().strftime("%d.%m.%Y")
             c.executemany("INSERT INTO managed_bots (bot_name, bot_token, project_type, city_name, report_type, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", [
-                ("🛵 FlitGo Bike Report Bot", "8123456789:AAXXXXXXXXXXXXXX", "FlitGo", "Ташкент", "Отчёт по байкам", 1, now_str),
-                ("📋 FlitGo Task Bot", "8987654321:AAYYYYYYYYYYYYYY", "FlitGo", "Все города", "Управление задачами", 1, now_str),
-                ("💎 Rich Main Bot", "8951006941:AAH2Wc2j2AH1aCvui1Bflr7puDStzHtwNNI", "Rich", "Все города", "Сервисы Rich", 1, now_str),
+                ("🛵 FlitGo Bike Report Bot", os.getenv("FLEET_BOT_TOKEN", ""), "FlitGo", "Ташкент", "Отчёт по байкам", 1, now_str),
+                ("📋 FlitGo Task Bot", os.getenv("TASK_BOT_TOKEN", ""), "FlitGo", "Все города", "Управление задачами", 1, now_str),
+                ("💎 Rich Main Bot", os.getenv("BOT_TOKEN", ""), "Rich", "Все города", "Сервисы Rich", 1, now_str),
             ])
         c.execute("""
             CREATE TABLE IF NOT EXISTS task_archive (
@@ -846,8 +848,8 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             conn.commit()
             conn.close()
 
-            bot_token = "8666306951:AAEJ9z2F0t4I2mj2IMPE8TygL6a2k_5ob6g"
-            chat_id = "-1002638798110"
+            bot_token = TASK_BOT_TOKEN
+            chat_id = TASK_CHAT_ID
 
             prio_str = "🔴 Срочно (High)" if priority == "High" else ("🟡 Средний" if priority == "Medium" else "🟢 Обычный")
 
@@ -922,8 +924,8 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
 
         try:
             # Step 3: send Telegram notification
-            bot_token = "8666306951:AAEJ9z2F0t4I2mj2IMPE8TygL6a2k_5ob6g"
-            chat_id = "-1002638798110"
+            bot_token = TASK_BOT_TOKEN
+            chat_id = TASK_CHAT_ID
             stars_str = "\u2b50" * rating
             score_bar = ["\u2605" if i < rating else "\u2606" for i in range(5)]
             score_display = "".join(score_bar)

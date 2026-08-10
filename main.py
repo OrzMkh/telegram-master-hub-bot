@@ -16,7 +16,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8951006941:AAH2Wc2j2AH1aCvui1Bflr7puDStzHtwNNI").strip()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+if not BOT_TOKEN:
+    logger.error("BOT_TOKEN is not set! Please add it to your .env file. Bot will not start.")
 
 def get_current_web_app_url():
     load_dotenv(override=True)
