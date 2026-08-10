@@ -117,19 +117,32 @@ function selectTaskRating(stars) {
 async function saveRateTaskModal() {
     if (!ratingSelectedTaskId) return;
     const comment = document.getElementById("inputRateComment")?.value || "";
+    const currentTaskId = ratingSelectedTaskId;
+    const currentRating = ratingSelectedValue || 5;
+
+    const btn = document.querySelector("#rateTaskModal .btn-primary");
+    if (btn) {
+        btn.textContent = "Отправка в группу...";
+        btn.disabled = true;
+    }
 
     try {
         await fetch("/api/tasks/rate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ task_id: ratingSelectedTaskId, rating: ratingSelectedValue, rating_comment: comment })
+            body: JSON.stringify({ task_id: currentTaskId, rating: currentRating, rating_comment: comment })
         });
         closeRateTaskModal();
-        loadTasksData();
+        await loadTasksData();
         updateDashboardView();
     } catch (e) {
         console.error("Save rating error:", e);
         closeRateTaskModal();
+    } finally {
+        if (btn) {
+            btn.textContent = "Сохранить оценку";
+            btn.disabled = false;
+        }
     }
 }
 
@@ -1127,7 +1140,12 @@ function renderTasksList() {
                                 <span style="font-size:13px; font-weight:800; color:var(--yandex-yellow);">⭐️ Оценка руководителя: ${starsStr} (${rating}/5)</span>
                                 ${t.rating_comment ? `<div style="font-size:11px; color:var(--text-secondary); margin-top:3px;">💬 "${t.rating_comment}"</div>` : ''}
                             </div>
+                            <button onclick="openRateTaskModal('${t.id}')" style="background:rgba(255,255,255,0.1); color:#FFFFFF; border:1px solid rgba(255,255,255,0.2); border-radius:8px; padding:4px 8px; font-size:11px; font-weight:700; cursor:pointer;">✏️ Изменить</button>
                         </div>
+                    `;
+                } else {
+                    ratingHTML = `
+                        <button onclick="openRateTaskModal('${t.id}')" style="margin-top:12px; width:100%; padding:11px; background:#FFDD00; color:#000000; font-weight:800; font-size:13px; border-radius:12px; border:none; box-shadow:0 4px 14px rgba(255,221,0,0.3); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">⭐️ Оценить выполнение (1-5)</button>
                     `;
                 }
             }
