@@ -1289,11 +1289,10 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                         status_val = r[stat_idx] if len(r) > stat_idx else "Active"
                         if status_val.strip().lower() in ["удалена", "deleted"]:
                             continue
-
-                        is_disputed = (bool(disp_val.strip()) or (status_val.strip().lower() in ["disputed", "оспорена", "оспорено"])) and not bool(final_rat.strip() and final_rat.strip() != "0")
+                        is_disputed = bool(disp_val.strip()) or (status_val.strip().lower() in ["disputed", "оспорена", "оспорено", "спор"])
                         if is_disputed:
                             status_val = "Disputed"
-                        elif final_rat.strip() or init_num > 0:
+                        elif final_num > 0 or init_num > 0:
                             status_val = "Done"
 
                         clean_id = str(r[id_idx]).replace("#", "").strip() if (len(r) > id_idx and str(r[id_idx]).strip()) else str(i)
