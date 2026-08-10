@@ -31,7 +31,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 MASTER_APP_PASSWORD = os.getenv("MASTER_APP_PASSWORD", "").strip()
 # TASK_BOT_TOKEN — токен бота для уведомлений о задачах (telegram-task-manager-bot)
 # Если не задан, используется BOT_TOKEN как запасной вариант
-TASK_BOT_TOKEN = os.getenv("TASK_BOT_TOKEN") or BOT_TOKEN
+TASK_BOT_TOKEN = (os.getenv("TASK_BOT_TOKEN") or BOT_TOKEN or "").strip()
 TASK_CHAT_ID = os.getenv("TASK_CHAT_ID", "-1002638798110").strip()
 
 if not BOT_TOKEN:
@@ -1506,15 +1506,22 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             if keyboard:
                 payload["reply_markup"] = keyboard
 
+            bot_token = (TASK_BOT_TOKEN or BOT_TOKEN or "").strip()
             req = urllib.request.Request(
                 f"https://api.telegram.org/bot{bot_token}/sendMessage",
                 data=json.dumps(payload).encode("utf-8"),
                 headers={"Content-Type": "application/json"}
             )
-            urllib.request.urlopen(req, timeout=5)
-            logger.info(f"Task #{task_id} rating ({rating}/5) notification sent to Telegram group {chat_id}.")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                logger.info(f"Task #{task_id} rating ({rating}/5) notification sent to Telegram group {chat_id}. Response: {resp.status}")
         except Exception as e:
-            logger.error(f"Failed to send rate notification to Telegram: {e}")
+            err_msg = str(e)
+            if hasattr(e, 'read'):
+                try:
+                    err_msg += " - " + e.read().decode('utf-8')
+                except Exception:
+                    pass
+            logger.error(f"Failed to send rate notification to Telegram: {err_msg}")
 
         # 4. Background Google Sheets & SQLite update
         def _bg_update_sheets_db():
