@@ -925,6 +925,8 @@ function switchTab(targetTab) {
     if (targetTab === "tasks") {
         if (typeof currentTaskSubtab !== "undefined" && currentTaskSubtab === "analytics") {
             loadKpiAnalytics();
+        } else if (typeof currentTaskSubtab !== "undefined" && currentTaskSubtab === "recurring") {
+            loadRecurringTasks();
         } else {
             loadTasksData();
         }
@@ -941,31 +943,27 @@ let currentTaskSubtab = "list";
 function switchTaskSubtab(subtab) {
     currentTaskSubtab = subtab;
     const btnList = document.getElementById("btnTaskSubtabList");
+    const btnRecurring = document.getElementById("btnTaskSubtabRecurring");
     const btnAnalytics = document.getElementById("btnTaskSubtabAnalytics");
     const viewList = document.getElementById("tasksSubtabListView");
+    const viewRecurring = document.getElementById("tasksSubtabRecurringView");
     const viewAnalytics = document.getElementById("tasksSubtabAnalyticsView");
 
-    if (btnList) {
-        btnList.removeAttribute("style");
-        btnList.classList.toggle("active", subtab === "list");
-    }
-    if (btnAnalytics) {
-        btnAnalytics.removeAttribute("style");
-        btnAnalytics.classList.toggle("active", subtab === "analytics");
-    }
+    if (btnList) btnList.classList.toggle("active", subtab === "list");
+    if (btnRecurring) btnRecurring.classList.toggle("active", subtab === "recurring");
+    if (btnAnalytics) btnAnalytics.classList.toggle("active", subtab === "analytics");
 
-    if (subtab === "list") {
-        if (viewList) viewList.style.display = "block";
-        if (viewAnalytics) viewAnalytics.style.display = "none";
-        loadTasksData();
-    } else if (subtab === "analytics") {
-        if (viewList) viewList.style.display = "none";
-        if (viewAnalytics) viewAnalytics.style.display = "block";
-        loadKpiAnalytics();
-    }
+    if (viewList) viewList.style.display = subtab === "list" ? "block" : "none";
+    if (viewRecurring) viewRecurring.style.display = subtab === "recurring" ? "block" : "none";
+    if (viewAnalytics) viewAnalytics.style.display = subtab === "analytics" ? "block" : "none";
+
+    if (subtab === "list") loadTasksData();
+    if (subtab === "recurring") loadRecurringTasks();
+    if (subtab === "analytics") loadKpiAnalytics();
 }
 
 window.switchTaskSubtab = switchTaskSubtab;
+
 
 let currentTelegramUser = null;
 
@@ -2282,3 +2280,218 @@ function renderKpiCharts(leaderboard) {
 
 window.setKpiPeriod = setKpiPeriod;
 window.loadKpiAnalytics = loadKpiAnalytics;
+
+// ==========================================
+// RECURRING TASKS (ПОСТОЯННЫЕ ЗАДАЧИ - ЗП / ZP)
+// ==========================================
+
+let recurringChartInstance = null;
+
+async function loadRecurringTasks() {
+    const listEl = document.getElementById("recurringTasksList");
+    const badgeEl = document.getElementById("recTasksCountBadge");
+    const totalEl = document.getElementById("recStatTotal");
+    const avgEl = document.getElementById("recStatAvgRating");
+    const ratedEl = document.getElementById("recStatRated");
+    const histEl = document.getElementById("recurringHistoryList");
+
+    if (listEl) listEl.innerHTML = `<div class="loading-spinner">Загрузка постоянных задач...</div>`;
+
+    try {
+        const [resTasks, resAnalytics] = await Promise.all([
+            fetch("/api/recurring_tasks"),
+            fetch("/api/recurring_tasks/analytics")
+        ]);
+
+        const tasks = await resTasks.json();
+        const analytics = await resAnalytics.json();
+
+        if (badgeEl) badgeEl.textContent = `${tasks.length} задач`;
+        if (totalEl) totalEl.textContent = tasks.length;
+        if (avgEl) avgEl.textContent = `${analytics.avg_rating || 5.0} ⭐️`;
+        if (ratedEl) ratedEl.textContent = `${analytics.rated_tasks || 0} из ${tasks.length}`;
+
+        renderRecurringTasksList(tasks);
+        renderRecurringChart(analytics.leads || []);
+
+        // Render monthly history (к 10 числу)
+        if (histEl && analytics.history) {
+            histEl.innerHTML = analytics.history.map(h => `
+                <div class="report-item" style="display:flex; justify-content:space-between; align-items:center; padding:12px; margin-bottom:8px;">
+                    <div>
+                        <div style="font-weight:700; font-size:13px; color:var(--text-primary);">📅 ${h.month}</div>
+                        <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">Выполнение: <b>${h.completion_rate}</b> | Статус: <span style="color:var(--accent-emerald);">${h.status}</span></div>
+                    </div>
+                    <div style="text-align:right;">
+                        <span class="badge" style="background:rgba(252,224,0,0.15); color:var(--yandex-yellow); border-color:var(--yandex-yellow); font-size:12px; font-weight:800;">⭐️ ${h.avg_rating}/5</span>
+                    </div>
+                </div>
+            `).join("");
+        }
+    } catch (err) {
+        console.error("Error loading recurring tasks:", err);
+        if (listEl) listEl.innerHTML = `<div class="muted-text text-center" style="color:var(--accent-rose);">Ошибка загрузки постоянных задач</div>`;
+    }
+}
+
+function renderRecurringTasksList(tasks) {
+    const listEl = document.getElementById("recurringTasksList");
+    if (!listEl) return;
+
+    if (!tasks || tasks.length === 0) {
+        listEl.innerHTML = `
+            <div class="muted-text text-center" style="padding:28px 16px;">
+                <div style="font-size:32px; margin-bottom:8px;">🔄</div>
+                <b>Постоянных задач пока нет</b>
+                <p style="font-size:12px; margin-top:4px;">Поставьте цикличную задачу в Telegram-боте через префикс <code>ЗП</code> или <code>ZP</code>.</p>
+            </div>
+        `;
+        return;
+    }
+
+    listEl.innerHTML = tasks.map(t => {
+        const stars = t.last_rating > 0 ? "⭐️".repeat(t.last_rating) : "—";
+        const ratText = t.last_rating > 0 ? `${stars} (${t.last_rating}/5)` : "Не оценена за период";
+        const asgn = t.assignee || "Команда";
+        const linkBtn = t.message_link ? `<a href="${t.message_link}" target="_blank" class="btn-sm" style="background:rgba(56,189,248,0.15); color:var(--accent-blue); padding:4px 8px; font-size:11px; border-radius:6px; text-decoration:none;">🔗 Сообщение</a>` : "";
+
+        return `
+            <div class="task-card" style="margin-bottom:12px; border-left:3px solid var(--accent-purple); padding:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                    <div>
+                        <span class="badge" style="background:rgba(192,132,252,0.15); color:var(--accent-purple); border-color:var(--accent-purple); font-size:10px; font-weight:800; text-transform:uppercase;">
+                            🔄 ${t.frequency || 'Регулярная'} (${t.day_of_week || 'Пн'})
+                        </span>
+                        <h4 style="font-size:15px; font-weight:700; color:var(--text-primary); margin-top:6px; line-height:1.3;">${t.title}</h4>
+                    </div>
+                    <span class="badge" style="font-size:10px;">#${t.id}</span>
+                </div>
+
+                <div style="display:flex; gap:16px; margin:10px 0; font-size:12px; color:var(--text-secondary); flex-wrap:wrap;">
+                    <span>👤 Исполнитель: <b style="color:var(--text-primary);">${asgn}</b></span>
+                    <span>✍️ Автор: <b>${t.author || 'Руководитель'}</b></span>
+                    <span>⭐️ Оценка: <b style="color:var(--yandex-yellow);">${ratText}</b></span>
+                </div>
+
+                ${t.last_rating_comment ? `<div style="font-size:11px; color:var(--text-muted); background:rgba(255,255,255,0.03); padding:6px 10px; border-radius:6px; margin-bottom:10px; font-style:italic;">💬 «${t.last_rating_comment}»</div>` : ""}
+
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; gap:8px; border-top:1px solid rgba(255,255,255,0.06); padding-top:8px;">
+                    <div>${linkBtn}</div>
+                    <div style="display:flex; gap:6px;">
+                        <button class="btn-sm" onclick="openRateRecurringModal(${t.id}, '${(t.title || '').replace(/'/g, "\\'")}')" style="background:var(--yandex-yellow); color:#000000; font-weight:800; padding:6px 12px; border-radius:8px; border:none; cursor:pointer;">
+                            ⭐️ Оценить
+                        </button>
+                        <button class="btn-sm" onclick="deleteRecurringTask(${t.id})" style="background:rgba(244,63,94,0.15); color:var(--accent-rose); padding:6px 10px; border-radius:8px; border:none; cursor:pointer;">
+                            🗑
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join("");
+}
+
+function renderRecurringChart(leads) {
+    if (!leads || leads.length === 0) return;
+    if (typeof Chart === "undefined") return;
+
+    const ctx = document.getElementById("recurringPerformanceChart");
+    if (!ctx) return;
+
+    if (recurringChartInstance) recurringChartInstance.destroy();
+
+    const labels = leads.map(l => l.name.split(" ")[0]);
+    const ratings = leads.map(l => l.avg_rating || 5.0);
+
+    recurringChartInstance = new Chart(ctx, {
+        type: "bar",
+        data: {
+            labels,
+            datasets: [{
+                data: ratings,
+                backgroundColor: "rgba(192,132,252,0.7)",
+                borderColor: "rgba(192,132,252,1)",
+                borderWidth: 1.5,
+                borderRadius: 8,
+            }]
+        },
+        options: {
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: "#9E9EA4", font: { size: 11, weight: "600" } }, grid: { color: "rgba(255,255,255,0.04)" } },
+                y: { min: 0, max: 5, ticks: { color: "#9E9EA4", font: { size: 10 } }, grid: { color: "rgba(255,255,255,0.04)" } }
+            }
+        }
+    });
+}
+
+function openRateRecurringModal(taskId, title) {
+    const modal = document.getElementById("rateRecurringTaskModal");
+    const titleEl = document.getElementById("rateRecurringTaskTitle");
+    const idInput = document.getElementById("rateRecurringTaskId");
+    const commentInput = document.getElementById("rateRecurringComment");
+
+    if (idInput) idInput.value = taskId;
+    if (titleEl) titleEl.textContent = `Задача: ${title}`;
+    if (commentInput) commentInput.value = "";
+    selectRecurringStar(5);
+
+    if (modal) modal.classList.remove("hidden");
+}
+
+function closeRateRecurringModal() {
+    const modal = document.getElementById("rateRecurringTaskModal");
+    if (modal) modal.classList.add("hidden");
+}
+
+function selectRecurringStar(rating) {
+    const selectedInput = document.getElementById("rateRecurringSelectedRating");
+    if (selectedInput) selectedInput.value = rating;
+    for (let i = 1; i <= 5; i++) {
+        const btn = document.getElementById(`recStar${i}`);
+        if (btn) btn.classList.toggle("active", i === rating);
+    }
+}
+
+async function submitRecurringRating() {
+    const taskId = document.getElementById("rateRecurringTaskId")?.value;
+    const rating = document.getElementById("rateRecurringSelectedRating")?.value || 5;
+    const comment = document.getElementById("rateRecurringComment")?.value || "";
+
+    if (!taskId) return;
+
+    try {
+        const res = await fetch("/api/recurring_tasks/rate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ task_id: taskId, rating: parseInt(rating), comment })
+        });
+        const data = await res.json();
+        closeRateRecurringModal();
+        loadRecurringTasks();
+    } catch (e) {
+        alert("Ошибка при сохранении оценки: " + e);
+    }
+}
+
+async function deleteRecurringTask(taskId) {
+    if (!confirm(`Удалить постоянную задачу #${taskId}?`)) return;
+    try {
+        await fetch("/api/recurring_tasks/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ task_id: taskId })
+        });
+        loadRecurringTasks();
+    } catch (e) {
+        alert("Ошибка при удалении задачи: " + e);
+    }
+}
+
+window.loadRecurringTasks = loadRecurringTasks;
+window.openRateRecurringModal = openRateRecurringModal;
+window.closeRateRecurringModal = closeRateRecurringModal;
+window.selectRecurringStar = selectRecurringStar;
+window.submitRecurringRating = submitRecurringRating;
+window.deleteRecurringTask = deleteRecurringTask;
+

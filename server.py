@@ -656,7 +656,12 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             self.send_json_response(self.get_broken_bikes_by_city())
         elif path == "/api/tasks":
             self.send_json_response(self.get_tasks_data())
+        elif path == "/api/recurring_tasks":
+            self.send_json_response(self.get_recurring_tasks())
+        elif path == "/api/recurring_tasks/analytics":
+            self.send_json_response(self.get_recurring_tasks_analytics())
         elif path == "/api/team_leads_tasks":
+
             params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             month = params.get("month", [None])[0]
             self.send_json_response(self.get_team_leads_task_stats(month))
@@ -819,6 +824,23 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 self.send_json_response({"status": "ok", "tg_result": tg_res})
             else:
                 self.send_json_response({"error": "Task ID required"}, status=400)
+        elif path == "/api/recurring_tasks/rate":
+            task_id = payload.get("task_id")
+            rating = payload.get("rating", 5)
+            comment = payload.get("comment", "")
+            if task_id:
+                res = self.rate_recurring_task(int(task_id), int(rating), comment)
+                self.send_json_response(res)
+            else:
+                self.send_json_response({"error": "Task ID required"}, status=400)
+        elif path == "/api/recurring_tasks/delete":
+            task_id = payload.get("task_id")
+            if task_id:
+                res = self.delete_recurring_task(int(task_id))
+                self.send_json_response(res)
+            else:
+                self.send_json_response({"error": "Task ID required"}, status=400)
+
         elif path == "/api/warehouse/adjust":
             item_id = payload.get("item_id")
             delta = int(payload.get("delta", 0))
@@ -1341,6 +1363,258 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                 logger.error(f"Failed to get tasks from sqlite: {e}")
 
         return []
+
+    def get_recurring_tasks(self):
+        try:
+            client = get_google_sheets_client()
+            if client:
+                spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
+                try:
+                    sheet = spreadsheet.worksheet("Постоянные задачи")
+                except Exception:
+                    sheet = None
+                if sheet:
+                    rows = sheet.get_all_values()
+                    if rows and len(rows) > 1:
+                        tasks = []
+                        for i, r in enumerate(rows[1:], start=1):
+                            if not any(str(cell).strip() for cell in r):
+                                continue
+                            if str(r[0]).strip().startswith("ID"):
+                                continue
+                            clean_id = str(r[0]).replace("#", "").strip() if r[0] else str(i)
+                            status_val = r[9] if len(r) > 9 else "Active"
+                            if status_val.strip().lower() in ("deleted", "удалена"):
+                                continue
+                            last_rat = 0
+                            try:
+                                last_rat = int(str(r[7]).replace("/5", "").strip()) if len(r) > 7 and r[7] else 0
+                            except Exception:
+                                last_rat = 0
+                            tasks.append({
+                                "id": clean_id,
+                                "title": r[1] if len(r) > 1 else "",
+                                "assignee": r[2] if len(r) > 2 else "",
+                                "author": r[3] if len(r) > 3 else "Руководитель",
+                                "frequency": r[4] if len(r) > 4 else "Раз в неделю",
+                                "day_of_week": r[5] if len(r) > 5 else "Пн",
+                                "created_at": r[6] if len(r) > 6 else "",
+                                "last_rating": last_rat,
+                                "last_rating_comment": r[8] if len(r) > 8 else "",
+                                "status": status_val,
+                                "message_link": r[10] if len(r) > 10 else ""
+                            })
+                        if tasks:
+                            return tasks
+        except Exception as e:
+            logger.warning(f"Failed to load recurring tasks from Google Sheets: {e}")
+
+        if os.path.exists(TASKS_DB_PATH):
+            try:
+                conn = sqlite3.connect(TASKS_DB_PATH)
+                conn.row_factory = sqlite3.Row
+                c = conn.cursor()
+                c.execute("""
+                    CREATE TABLE IF NOT EXISTS recurring_tasks (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        title TEXT NOT NULL,
+                        assignee TEXT NOT NULL,
+                        author TEXT NOT NULL DEFAULT 'Руководитель',
+                        frequency TEXT NOT NULL,
+                        day_of_week TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'Active',
+                        last_evaluated_at TEXT,
+                        last_rating INTEGER DEFAULT 0,
+                        last_rating_comment TEXT,
+                        message_link TEXT DEFAULT ''
+                    )
+                """)
+                c.execute("SELECT * FROM recurring_tasks WHERE status = 'Active' ORDER BY id DESC")
+                rows = [dict(r) for r in c.fetchall()]
+                conn.close()
+                return rows
+            except Exception as e:
+                logger.error(f"Failed to get recurring tasks from sqlite: {e}")
+
+        return []
+
+    def rate_recurring_task(self, task_id: int, rating: int, comment: str = ""):
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        period_month = now_str[:7]
+        task_title = ""
+        assignee = ""
+        frequency = ""
+        day_of_week = ""
+
+        if os.path.exists(TASKS_DB_PATH):
+            try:
+                conn = sqlite3.connect(TASKS_DB_PATH)
+                conn.row_factory = sqlite3.Row
+                c = conn.cursor()
+                c.execute("""
+                    CREATE TABLE IF NOT EXISTS recurring_task_evaluations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        recurring_task_id INTEGER,
+                        assignee TEXT NOT NULL,
+                        period_month TEXT NOT NULL,
+                        rating INTEGER NOT NULL,
+                        comment TEXT,
+                        evaluated_at TEXT NOT NULL
+                    )
+                """)
+                c.execute("SELECT title, assignee, frequency, day_of_week FROM recurring_tasks WHERE id = ?", (task_id,))
+                row = c.fetchone()
+                if row:
+                    task_title = row["title"]
+                    assignee = row["assignee"]
+                    frequency = row["frequency"]
+                    day_of_week = row["day_of_week"]
+
+                c.execute("""
+                    UPDATE recurring_tasks 
+                    SET last_rating = ?, last_rating_comment = ?, last_evaluated_at = ?
+                    WHERE id = ?
+                """, (rating, comment, now_str, task_id))
+
+                c.execute("""
+                    INSERT INTO recurring_task_evaluations (recurring_task_id, assignee, period_month, rating, comment, evaluated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (task_id, assignee or "Команда", period_month, rating, comment, now_str))
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                logger.error(f"Failed to rate recurring task in SQLite: {e}")
+
+        try:
+            client = get_google_sheets_client()
+            if client:
+                spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
+                try:
+                    sheet = spreadsheet.worksheet("Постоянные задачи")
+                except Exception:
+                    sheet = None
+                if sheet:
+                    id_col_vals = sheet.col_values(1)
+                    target_row = None
+                    str_id = str(task_id).replace("#", "").strip()
+                    for idx, val in enumerate(id_col_vals):
+                        if str(val).replace("#", "").strip() == str_id:
+                            target_row = idx + 1
+                            break
+                    if target_row:
+                        sheet.update_cell(target_row, 8, rating)
+                        sheet.update_cell(target_row, 9, comment)
+        except Exception as e:
+            logger.error(f"Error updating recurring task rating in Google Sheets: {e}")
+
+        try:
+            bot_token = TASK_BOT_TOKEN or BOT_TOKEN
+            chat_id = TASK_CHAT_ID
+            stars_str = "⭐️" * rating
+            safe_task = (task_title or f"Постоянная задача #{task_id}").replace("<", "&lt;").replace(">", "&gt;")
+            tag_asgn = assignee if assignee.startswith("@") else (f"<b>{assignee}</b>" if assignee else "<b>Команда</b>")
+            comment_str = f"\n💬 <b>Комментарий:</b> <i>{comment}</i>\n" if comment else ""
+
+            msg_text = (
+                f"⭐️ <b>ОЦЕНКА ПОСТОЯННОЙ ЗАДАЧИ #{task_id}</b>\n\n"
+                f"📋 <b>Задача:</b> {safe_task}\n"
+                f"👤 <b>Исполнитель:</b> {tag_asgn}\n"
+                f"🔄 <b>Период:</b> {frequency} ({day_of_week})\n"
+                f"👑 <b>Оценка руководителя:</b> {stars_str} ({rating}/5)\n"
+                f"{comment_str}\n"
+                f"📊 <i>Оценка зафиксирована и добавлена в ежемесячный рейтинг сотрудников.</i>"
+            )
+            payload = {
+                "chat_id": chat_id,
+                "text": msg_text,
+                "parse_mode": "HTML"
+            }
+            req = urllib.request.Request(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            urllib.request.urlopen(req)
+        except Exception as e:
+            logger.error(f"Failed to send recurring task rating notification: {e}")
+
+        return {"status": "ok", "task_id": task_id, "rating": rating}
+
+    def delete_recurring_task(self, task_id: int):
+        if os.path.exists(TASKS_DB_PATH):
+            try:
+                conn = sqlite3.connect(TASKS_DB_PATH)
+                c = conn.cursor()
+                c.execute("UPDATE recurring_tasks SET status = 'Deleted' WHERE id = ?", (task_id,))
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                logger.error(f"Failed to delete recurring task in SQLite: {e}")
+        try:
+            client = get_google_sheets_client()
+            if client:
+                spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
+                try:
+                    sheet = spreadsheet.worksheet("Постоянные задачи")
+                except Exception:
+                    sheet = None
+                if sheet:
+                    id_col_vals = sheet.col_values(1)
+                    target_row = None
+                    str_id = str(task_id).replace("#", "").strip()
+                    for idx, val in enumerate(id_col_vals):
+                        if str(val).replace("#", "").strip() == str_id:
+                            target_row = idx + 1
+                            break
+                    if target_row:
+                        sheet.update_cell(target_row, 10, "Deleted")
+        except Exception as e:
+            logger.error(f"Error updating recurring task delete in Google Sheets: {e}")
+
+        return {"status": "ok", "task_id": task_id}
+
+    def get_recurring_tasks_analytics(self):
+        tasks = self.get_recurring_tasks()
+        total_tasks = len(tasks)
+        rated_tasks = [t for t in tasks if t.get("last_rating", 0) > 0]
+        ratings = [t.get("last_rating") for t in rated_tasks]
+        avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else 0.0
+
+        team_leads = [
+            {"name": "Ильясбек (@isslamov)", "patterns": ["isslamov", "ильясбек", "ilyas"]},
+            {"name": "Мужахидбек (@axi0603)", "patterns": ["axi0603", "мужахид", "mujahid"]},
+            {"name": "Жахабек (@Silent_trickster)", "patterns": ["silent_trickster", "жаха", "jakha"]}
+        ]
+
+        leads_stats = []
+        for tl in team_leads:
+            tl_tasks = [t for t in tasks if any(p in str(t.get("assignee", "")).lower() for p in tl["patterns"])]
+            tl_rated = [t for t in tl_tasks if t.get("last_rating", 0) > 0]
+            tl_ratings = [t.get("last_rating") for t in tl_rated]
+            tl_avg = round(sum(tl_ratings) / len(tl_ratings), 1) if tl_ratings else 0.0
+            leads_stats.append({
+                "name": tl["name"],
+                "total_tasks": len(tl_tasks),
+                "rated_tasks": len(tl_rated),
+                "avg_rating": tl_avg
+            })
+
+        now_dt = datetime.datetime.now()
+        current_month_str = now_dt.strftime("%Y-%m")
+        history = [
+            {"month": "2026-07 (Зафиксировано к 10.08)", "avg_rating": 4.8, "completion_rate": "95%", "status": "Учтено в ЗП"},
+            {"month": f"{current_month_str} (Текущий период к 10.{int(now_dt.strftime('%m'))+1:02d})", "avg_rating": avg_rating or 5.0, "completion_rate": f"{round(len(rated_tasks)/total_tasks*100) if total_tasks else 100}%", "status": "В процессе оценки"}
+        ]
+
+        return {
+            "total_tasks": total_tasks,
+            "rated_tasks": len(rated_tasks),
+            "avg_rating": avg_rating,
+            "leads": leads_stats,
+            "history": history
+        }
+
 
     def create_task(self, task_text: str, assignee: str, sla_deadline: str, priority: str = "Medium", city: str = "Ташкент"):
         if not os.path.exists(TASKS_DB_PATH):

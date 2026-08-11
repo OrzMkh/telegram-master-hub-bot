@@ -152,13 +152,16 @@
                     <button class="btn-sm btn-primary-sm" id="btnOpenCreateTaskModal" onclick="openCreateTaskModal()">➕ Создать задачу</button>
                 </div>
 
-                <!-- Sub-tabs: List vs Analytics -->
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; padding:8px; background:var(--card-bg-elevated); border-radius:14px; border:1px solid var(--card-border); margin-bottom:16px;">
+                <!-- Sub-tabs: List vs Recurring vs Analytics -->
+                <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; padding:8px; background:var(--card-bg-elevated); border-radius:14px; border:1px solid var(--card-border); margin-bottom:16px;">
                     <button class="btn subcat-btn active" id="btnTaskSubtabList" onclick="switchTaskSubtab('list')">
-                        📋 Список задач
+                        📋 Задачи SLA
+                    </button>
+                    <button class="btn subcat-btn" id="btnTaskSubtabRecurring" onclick="switchTaskSubtab('recurring')">
+                        🔄 Постоянные
                     </button>
                     <button class="btn subcat-btn" id="btnTaskSubtabAnalytics" onclick="switchTaskSubtab('analytics')">
-                        📈 Аналитика & KPI
+                        📈 Аналитика
                     </button>
                 </div>
 
@@ -188,6 +191,66 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- SUB-TAB 3: Recurring Tasks View (Постоянные задачи) -->
+                <div id="tasksSubtabRecurringView" style="display:none;">
+                    <!-- Stats summary -->
+                    <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px; margin-bottom:16px;">
+                        <div class="card-box" style="padding:12px; text-align:center;">
+                            <div id="recStatTotal" style="font-size:22px; font-weight:700; color:var(--accent-purple);">0</div>
+                            <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Постоянных задач</div>
+                        </div>
+                        <div class="card-box" style="padding:12px; text-align:center;">
+                            <div id="recStatAvgRating" style="font-size:22px; font-weight:700; color:var(--accent-emerald);">5.0 ⭐️</div>
+                            <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Ср. оценка за месяц</div>
+                        </div>
+                        <div class="card-box" style="padding:12px; text-align:center;">
+                            <div id="recStatRated" style="font-size:22px; font-weight:700; color:var(--yandex-yellow);">0</div>
+                            <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Оценено в периоде</div>
+                        </div>
+                    </div>
+
+                    <!-- Info Box explaining evaluation cycle -->
+                    <div class="card-box" style="background:rgba(192,132,252,0.08); border:1px solid rgba(192,132,252,0.25); padding:12px 16px; margin-bottom:16px; border-radius:14px;">
+                        <div style="font-size:12px; font-weight:700; color:var(--accent-purple); display:flex; align-items:center; gap:6px;">
+                            <span>🔄 Цикличность & Оценка к 10 числу</span>
+                        </div>
+                        <p style="font-size:11px; color:var(--text-secondary); margin-top:4px; line-height:1.4;">
+                            Постоянные задачи ставятся через префикс <b>«ЗП»</b> или <b>«ZP»</b> в боте. Вы можете оценить последнее выполнение в любой момент. К <b>10 числу каждого месяца</b> сводка фиксируется в ежемесячном рейтинге и расчёте ЗП.
+                        </p>
+                    </div>
+
+                    <!-- Recurring Tasks List -->
+                    <div class="card-box" style="margin-bottom:16px;">
+                        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                            <h4>🔄 Список постоянных задач</h4>
+                            <span class="badge" id="recTasksCountBadge" style="color:var(--accent-purple);">0 задач</span>
+                        </div>
+                        <div id="recurringTasksList" class="tasks-list">
+                            <div class="loading-spinner">Загрузка постоянных задач...</div>
+                        </div>
+                    </div>
+
+                    <!-- Chart: Recurring performance per team lead -->
+                    <div class="card-box" style="padding:16px; margin-bottom:16px;">
+                        <div style="font-size:12px; font-weight:800; color:var(--accent-purple); margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+                            <span>📈 Выполнение постоянных задач по сотрудникам</span>
+                            <span class="badge" style="font-size:10px; color:var(--accent-purple); border-color:rgba(192,132,252,0.4);">Шкала 1-5</span>
+                        </div>
+                        <canvas id="recurringPerformanceChart" height="130"></canvas>
+                    </div>
+
+                    <!-- Monthly history section (к 10 числу) -->
+                    <div class="card-box">
+                        <div class="card-header">
+                            <h4>📆 Ежемесячные результаты постоянных задач</h4>
+                        </div>
+                        <div id="recurringHistoryList" class="reports-feed">
+                            <div class="muted-text">История формируется к 10 числу каждого месяца.</div>
+                        </div>
+                    </div>
+                </div>
+
 
                 <!-- SUB-TAB 2: Analytics & KPI View -->
                 <div id="tasksSubtabAnalyticsView" style="display:none;">
@@ -622,6 +685,39 @@
         </div>
     </div>
 
-    <script src="app.js?v=20260810_v3"></script>
+    <!-- Modal for Rating Recurring Task -->
+    <div id="rateRecurringTaskModal" class="modal-backdrop hidden">
+        <div class="modal-card">
+            <h3>⭐️ Оценить постоянную задачу</h3>
+            <p class="muted-text" id="rateRecurringTaskTitle">Оценка последнего выполнения:</p>
+
+            <div style="margin-top:14px; text-align:center;">
+                <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:8px;">Выберите оценку руководителя:</label>
+                <div style="display:flex; justify-content:center; gap:8px; margin-bottom:14px;">
+                    <button type="button" class="btn star-btn" onclick="selectRecurringStar(1)" id="recStar1">⭐️ 1</button>
+                    <button type="button" class="btn star-btn" onclick="selectRecurringStar(2)" id="recStar2">⭐️ 2</button>
+                    <button type="button" class="btn star-btn" onclick="selectRecurringStar(3)" id="recStar3">⭐️ 3</button>
+                    <button type="button" class="btn star-btn" onclick="selectRecurringStar(4)" id="recStar4">⭐️ 4</button>
+                    <button type="button" class="btn star-btn active" onclick="selectRecurringStar(5)" id="recStar5">⭐️ 5</button>
+                </div>
+            </div>
+
+            <div style="margin-top:10px;">
+                <label style="font-size:12px; color:var(--text-muted); font-weight:600;">💬 Комментарий к оценке (опционально):</label>
+                <textarea id="rateRecurringComment" class="form-input" rows="2" placeholder="Например: Всё проверено в срок и без нареканий"></textarea>
+            </div>
+
+            <input type="hidden" id="rateRecurringTaskId" value="">
+            <input type="hidden" id="rateRecurringSelectedRating" value="5">
+
+            <div class="modal-actions" style="margin-top:16px;">
+                <button class="btn btn-secondary" onclick="closeRateRecurringModal()">Отмена</button>
+                <button class="btn btn-primary" onclick="submitRecurringRating()">✅ Сохранить оценку</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js?v=20260811_v1"></script>
 </body>
 </html>
+
