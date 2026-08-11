@@ -42,3 +42,8 @@ htmlcov/
 *.swp
 .DS_Store
 Thumbs.db
+
+# AI prompts and documentation (local only)
+CLAUDE.md
+CLAUDE_PROMPT.md
+

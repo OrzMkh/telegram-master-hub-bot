@@ -1316,13 +1316,19 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                         status_val = r[stat_idx] if len(r) > stat_idx else "Active"
                         if status_val.strip().lower() in ["удалена", "deleted"]:
                             continue
-                        is_disputed = bool(disp_val.strip()) or (status_val.strip().lower() in ["disputed", "оспорена", "оспорено", "спор"])
+
+                        # Active dispute condition: task has dispute comment or status, AND final rating is not yet set (>0)
+                        has_final = final_num > 0
+                        has_dispute_flag = bool(disp_val.strip()) or (status_val.strip().lower() in ["disputed", "оспорена", "оспорено", "спор"])
+                        is_disputed = has_dispute_flag and not has_final
+
                         if is_disputed:
                             status_val = "Disputed"
-                        elif final_num > 0 or init_num > 0:
+                        elif has_final or init_num > 0 or status_val.strip().lower() in ["done", "завершено", "завершена", "выполнено"]:
                             status_val = "Done"
 
                         clean_id = str(r[id_idx]).replace("#", "").strip() if (len(r) > id_idx and str(r[id_idx]).strip()) else str(i)
+                        effective_rating = final_num if final_num > 0 else (init_num if not is_disputed else 0)
                         tasks.append({
                             "id": clean_id,
                             "task_text": r[text_idx] if len(r) > text_idx else "",
@@ -1333,7 +1339,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                             "status": status_val,
                             "priority": "Medium",
                             "city": "Ташкент",
-                            "rating": final_num if final_num > 0 else (init_num if not is_disputed else 0),
+                            "rating": effective_rating,
                             "initial_rating": init_num,
                             "final_rating": final_num,
                             "is_disputed": is_disputed,
@@ -1727,7 +1733,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                     task_text = t.get("task_text", "")
                     assignee = t.get("assignee", "")
                     prev_init_rating = t.get("initial_rating", 0)
-                    was_disputed = t.get("is_disputed", False)
+                    was_disputed = bool(t.get("is_disputed")) or (t.get("status") == "Disputed") or bool(t.get("rating_comment", ""))
                     break
 
         # 2. Lookup in SQLite tasks.db fallback

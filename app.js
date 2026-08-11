@@ -66,22 +66,19 @@ window.saveCityModal = saveCityModal;
 
 // Task Filtering Handlers
 function setTaskFilter(filter) {
-    currentTaskFilter = filter;
-    document.getElementById("btnFilterTaskAll")?.classList.remove("active");
-    document.getElementById("btnFilterTaskActive")?.classList.remove("active");
-    document.getElementById("btnFilterTaskDone")?.classList.remove("active");
-    document.getElementById("btnFilterTaskUnrated")?.classList.remove("active");
-    document.getElementById("btnFilterTaskDisputed")?.classList.remove("active");
-
+    window.currentTaskFilter = filter;
+    ["btnFilterTaskAll", "btnFilterTaskActive", "btnFilterTaskDone", "btnFilterTaskUnrated", "btnFilterTaskDisputed", "btnFilterTaskRated"].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.classList.remove("active");
+    });
     if (filter === "all") document.getElementById("btnFilterTaskAll")?.classList.add("active");
     if (filter === "active") document.getElementById("btnFilterTaskActive")?.classList.add("active");
     if (filter === "done") document.getElementById("btnFilterTaskDone")?.classList.add("active");
     if (filter === "unrated") document.getElementById("btnFilterTaskUnrated")?.classList.add("active");
     if (filter === "disputed") document.getElementById("btnFilterTaskDisputed")?.classList.add("active");
-
-    loadTasksData();
+    if (filter === "rated") document.getElementById("btnFilterTaskRated")?.classList.add("active");
+    renderTasksList();
 }
-
 window.setTaskFilter = setTaskFilter;
 
 // Rating Modal Functions
@@ -125,6 +122,22 @@ async function saveRateTaskModal() {
         btn.textContent = "Отправка в группу...";
         btn.disabled = true;
     }
+
+    // Optimistically update local task cache
+    const found = localTasksCache.find(t => String(t.id) === String(currentTaskId));
+    if (found) {
+        found.rating = currentRating;
+        if (found.is_disputed || found.status === "Disputed" || (found.rating_comment && found.rating_comment.includes(":"))) {
+            found.final_rating = currentRating;
+            found.is_disputed = false;
+        }
+        found.status = "Done";
+        if (comment) {
+            found.rating_comment = (found.rating_comment ? found.rating_comment + " " : "") + comment;
+        }
+    }
+    renderTasksList();
+    updateDashboardView();
 
     try {
         await fetch("/api/tasks/rate", {
@@ -1054,12 +1067,13 @@ let localTasksCache = [];
 
 function setTaskFilter(filter) {
     window.currentTaskFilter = filter;
-    ["btnFilterTaskAll", "btnFilterTaskActive", "btnFilterTaskUnrated", "btnFilterTaskDisputed", "btnFilterTaskRated"].forEach(id => {
+    ["btnFilterTaskAll", "btnFilterTaskActive", "btnFilterTaskDone", "btnFilterTaskUnrated", "btnFilterTaskDisputed", "btnFilterTaskRated"].forEach(id => {
         const btn = document.getElementById(id);
         if (btn) btn.classList.remove("active");
     });
     if (filter === "all") document.getElementById("btnFilterTaskAll")?.classList.add("active");
     if (filter === "active") document.getElementById("btnFilterTaskActive")?.classList.add("active");
+    if (filter === "done") document.getElementById("btnFilterTaskDone")?.classList.add("active");
     if (filter === "unrated") document.getElementById("btnFilterTaskUnrated")?.classList.add("active");
     if (filter === "disputed") document.getElementById("btnFilterTaskDisputed")?.classList.add("active");
     if (filter === "rated") document.getElementById("btnFilterTaskRated")?.classList.add("active");
@@ -1085,11 +1099,11 @@ function renderTasksList() {
 
     // Apply task status filtering
     const filter = window.currentTaskFilter || "all";
-    if (filter === "active") tasks = tasks.filter(t => t.status !== "Done" && !t.is_disputed && t.status !== "Disputed");
-    if (filter === "done") tasks = tasks.filter(t => t.status === "Done" && !t.is_disputed && t.status !== "Disputed");
-    if (filter === "unrated") tasks = tasks.filter(t => t.status === "Done" && (!t.rating || t.rating === 0) && !t.is_disputed && t.status !== "Disputed");
-    if (filter === "disputed") tasks = tasks.filter(t => t.is_disputed === true || t.status === "Disputed" || (t.rating_comment && t.rating_comment.trim().length > 0 && t.rating_comment.includes(":")));
-    if (filter === "rated") tasks = tasks.filter(t => (t.rating > 0 || t.final_rating > 0) && !t.is_disputed && t.status !== "Disputed");
+    if (filter === "active") tasks = tasks.filter(t => t.status !== "Done" && !t.is_disputed && t.status !== "Disputed" && (!t.final_rating || Number(t.final_rating) === 0));
+    if (filter === "done") tasks = tasks.filter(t => (t.status === "Done" || (t.final_rating && Number(t.final_rating) > 0)) && !t.is_disputed && t.status !== "Disputed");
+    if (filter === "unrated") tasks = tasks.filter(t => (t.status === "Done" || t.status === "Active") && (!t.rating || Number(t.rating) === 0) && (!t.final_rating || Number(t.final_rating) === 0) && !t.is_disputed && t.status !== "Disputed");
+    if (filter === "disputed") tasks = tasks.filter(t => (t.is_disputed === true || t.status === "Disputed" || (t.rating_comment && t.rating_comment.includes(":") && (!t.final_rating || Number(t.final_rating) === 0))) && (!t.final_rating || Number(t.final_rating) === 0));
+    if (filter === "rated") tasks = tasks.filter(t => (Number(t.rating) > 0 || Number(t.final_rating) > 0) && !t.is_disputed && t.status !== "Disputed");
 
     const countBadge = document.getElementById("taskCountBadge");
     if (countBadge) countBadge.textContent = `Показано: ${tasks.length}`;
@@ -1098,8 +1112,9 @@ function renderTasksList() {
         tasksList.innerHTML = `<div class="muted-text text-center" style="padding:24px; color:var(--text-muted); font-size:13px;">Задач не найдено</div>`;
     } else {
         tasksList.innerHTML = tasks.map(t => {
-            const isDisputed = t.is_disputed === true || t.status === "Disputed" || (t.rating_comment && t.rating_comment.trim().length > 0 && !t.final_rating);
-            const isDone = t.status === "Done" || isDisputed;
+            const hasFinalRating = (t.final_rating && Number(t.final_rating) > 0);
+            const isDisputed = (t.is_disputed === true || t.status === "Disputed" || (t.rating_comment && t.rating_comment.includes(":") && !hasFinalRating)) && !hasFinalRating;
+            const isDone = t.status === "Done" || isDisputed || hasFinalRating;
             const statusClass = isDisputed ? "disputed" : (isDone ? "closed" : "active");
             const statusText = isDisputed ? "⚖️ Оспорена" : (isDone ? "Завершено" : "В работе");
 
@@ -1108,9 +1123,11 @@ function renderTasksList() {
             if (priority === "High") prioBadge = `<span class="badge" style="background:rgba(244,63,94,0.15); color:#f43f5e; border-color:#f43f5e; font-size:10px;">🔴 Срочно</span>`;
             if (priority === "Low") prioBadge = `<span class="badge" style="background:rgba(16,185,129,0.15); color:#10b981; border-color:#10b981; font-size:10px;">🟢 Обычный</span>`;
 
-            const rating = t.rating || 0;
+            const rating = Number(t.final_rating || t.rating || 0);
             let ratingHTML = "";
+
             if (isDisputed) {
+                // Active dispute awaiting final manager rating
                 ratingHTML = `
                     <div style="margin-top:12px; padding:14px; background:rgba(20,20,28,0.95); border-radius:14px; border:2px solid rgba(252,63,29,0.5); text-align:center; box-shadow:0 4px 18px rgba(252,63,29,0.2);">
                         <div style="font-size:12px; font-weight:800; color:var(--yandex-red); margin-bottom:6px; display:flex; align-items:center; justify-content:center; gap:6px; text-transform:uppercase; letter-spacing:0.5px;">
@@ -1119,7 +1136,7 @@ function renderTasksList() {
                         <div style="font-size:12px; color:#FFFFFF; font-style:italic; margin-bottom:12px; padding:10px 12px; background:rgba(252,63,29,0.18); border-radius:10px; border:1px solid rgba(252,63,29,0.35); line-height:1.4;">
                             💬 "${t.rating_comment || 'Исполнитель запросил пересмотр оценки'}"
                         </div>
-                        <div style="font-size:13px; font-weight:800; color:var(--yandex-yellow); margin-bottom:10px;">⭐️ Пересмотрите оценку за задачу:</div>
+                        <div style="font-size:13px; font-weight:800; color:var(--yandex-yellow); margin-bottom:10px;">⭐️ Выставите окончательную оценку:</div>
                         <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:6px;">
                             <button onclick="rateTaskAction('${t.id}', 1, event)" style="background:#FC3F1D; color:#FFFFFF; padding:10px 4px; border:none; border-radius:10px; font-weight:800; font-size:13px; cursor:pointer; box-shadow:0 3px 10px rgba(252,63,29,0.4); transition:transform 0.1s;">⭐ 1</button>
                             <button onclick="rateTaskAction('${t.id}', 2, event)" style="background:#FF7700; color:#FFFFFF; padding:10px 4px; border:none; border-radius:10px; font-weight:800; font-size:13px; cursor:pointer; box-shadow:0 3px 10px rgba(255,119,0,0.4); transition:transform 0.1s;">⭐ 2</button>
@@ -1127,6 +1144,20 @@ function renderTasksList() {
                             <button onclick="rateTaskAction('${t.id}', 4, event)" style="background:#38BDF8; color:#000000; padding:10px 4px; border:none; border-radius:10px; font-weight:800; font-size:13px; cursor:pointer; box-shadow:0 3px 10px rgba(56,189,248,0.4); transition:transform 0.1s;">⭐ 4</button>
                             <button onclick="rateTaskAction('${t.id}', 5, event)" style="background:#10B981; color:#FFFFFF; padding:10px 4px; border:none; border-radius:10px; font-weight:800; font-size:13px; cursor:pointer; box-shadow:0 3px 10px rgba(16,185,129,0.4); transition:transform 0.1s;">⭐ 5</button>
                         </div>
+                    </div>
+                `;
+            } else if (hasFinalRating) {
+                // Final evaluated dispute - LOCKED from further changes
+                const starsStr = "⭐️".repeat(rating);
+                ratingHTML = `
+                    <div style="margin-top:10px; padding:12px 14px; background:rgba(16,185,129,0.12); border-radius:12px; border:1px solid rgba(16,185,129,0.35);">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span style="font-size:13px; font-weight:800; color:#10b981; display:flex; align-items:center; gap:5px;">
+                                🔒 Окончательная оценка: ${starsStr} (${rating}/5)
+                            </span>
+                            <span style="font-size:10px; font-weight:700; color:rgba(255,255,255,0.7); background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:6px;">Зафиксировано</span>
+                        </div>
+                        ${t.rating_comment ? `<div style="font-size:11px; color:var(--text-secondary); margin-top:5px; line-height:1.3;">⚖️ <i>Спор закрыт: "${t.rating_comment}"</i></div>` : ''}
                     </div>
                 `;
             } else if (isDone) {
@@ -1198,12 +1229,15 @@ async function rateTaskAction(taskId, rating, event) {
     const found = localTasksCache.find(t => String(t.id) === String(taskId));
     if (found) {
         found.rating = rating;
+        found.final_rating = rating;
+        found.is_disputed = false;
+        found.status = "Done";
     }
 
     setTimeout(() => {
         renderTasksList();
         updateDashboardView();
-    }, 250);
+    }, 200);
 
     try {
         await fetch("/api/tasks/rate", {
@@ -1211,6 +1245,8 @@ async function rateTaskAction(taskId, rating, event) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ task_id: taskId, rating: rating })
         });
+        await loadTasksData();
+        updateDashboardView();
     } catch (e) {
         console.error("Rate task error:", e);
     }
