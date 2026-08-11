@@ -2342,7 +2342,11 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             # Aggregate per assignee
             grouped = {}
             for t in filtered_tasks:
-                assignee = normalize_assignee(t.get("assignee"))
+                raw_asgn = str(t.get("assignee", "")).strip()
+                if not raw_asgn or raw_asgn.lower() in ("исполнитель", "assignee", "постановщик"):
+                    continue
+
+                assignee = normalize_assignee(raw_asgn)
                 if assignee not in grouped:
                     grouped[assignee] = {
                         "assignee": assignee,
@@ -2351,6 +2355,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                         "ratings": [],
                         "disputes": 0
                     }
+
 
                 g = grouped[assignee]
                 g["total_tasks"] += 1
