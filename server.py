@@ -1584,8 +1584,9 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         team_leads = [
             {"name": "Ильясбек (@isslamov)", "patterns": ["isslamov", "ильясбек", "ilyas"]},
             {"name": "Мужахидбек (@axi0603)", "patterns": ["axi0603", "мужахид", "mujahid"]},
-            {"name": "Жахабек (@Silent_trickster)", "patterns": ["silent_trickster", "жаха", "jakha"]}
+            {"name": "Жахонгир (@Silent_trickster)", "patterns": ["silent_trickster", "silenttrickster", "жахонгир", "жахангир", "jaxa", "жаха", "jakha", "silent"]}
         ]
+
 
         leads_stats = []
         for tl in team_leads:
@@ -2119,8 +2120,9 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         team_leads = [
             {"name": "Ильясбек (@isslamov)", "role": "Тимлид", "patterns": ["isslaamov", "isslamov", "ильясбек", "ilyas"]},
             {"name": "Мужахидбек (@axi0603)", "role": "Тимлид", "patterns": ["axi0603", "axi", "мужахид", "mujahid"]},
-            {"name": "Жахабек (@Silent_trickster)", "role": "Тимлид", "patterns": ["silent_trickster", "silenttrickster", "jaxa", "жаха", "jakha"]}
+            {"name": "Жахонгир (@Silent_trickster)", "role": "Тимлид", "patterns": ["silent_trickster", "silenttrickster", "жахонгир", "жахангир", "jaxa", "жаха", "jakha", "silent"]}
         ]
+
         all_tasks = self.get_tasks_data()
         results = []
 
@@ -2549,8 +2551,18 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
 
             team_lead_map = {
                 "isslamov": "Ильясбек (@isslamov)",
+                "isslaamov": "Ильясбек (@isslamov)",
+                "ильяс": "Ильясбек (@isslamov)",
                 "axi0603": "Мужахидбек (@axi0603)",
-                "silent_trickster": "Жахабек (@Silent_trickster)",
+                "axi": "Мужахидбек (@axi0603)",
+                "мужахид": "Мужахидбек (@axi0603)",
+                "silent_trickster": "Жахонгир (@Silent_trickster)",
+                "silenttrickster": "Жахонгир (@Silent_trickster)",
+                "жахонгир": "Жахонгир (@Silent_trickster)",
+                "жахангир": "Жахонгир (@Silent_trickster)",
+                "жаха": "Жахонгир (@Silent_trickster)",
+                "jaxa": "Жахонгир (@Silent_trickster)",
+                "jakha": "Жахонгир (@Silent_trickster)",
             }
 
             def normalize_assignee(raw_name: str) -> str:
@@ -2562,6 +2574,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                     if k in low:
                         return v
                 return s
+
 
             if not tasks:
                 # Baseline data for team leads if Google Sheets is momentarily unavailable
