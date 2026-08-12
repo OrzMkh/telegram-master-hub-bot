@@ -54,7 +54,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 from telegram.ext import CallbackQueryHandler, MessageHandler, filters
 import sqlite3
 
-TASKS_DB_PATH = r"C:\Users\Mujohid\.gemini\antigravity-ide\scratch\telegram-task-manager-bot\tasks.db"
+TASKS_DB_PATH = os.getenv("TASKS_DB_PATH", os.path.join(os.path.dirname(__file__), "tasks.db"))
 TARGET_CHAT_ID = "-1002638798110"
 
 async def dispute_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
