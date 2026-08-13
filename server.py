@@ -26,7 +26,7 @@ else:
     WEB_APP_DIR = BASE_DIR
 
 BIKES_DB_PATH = os.path.join(BASE_DIR, "bike_reports.db")  # Rich bot DB (local fallback only)
-TASKS_DB_PATH = os.path.join(BASE_DIR, "tasks.db")
+TASKS_DB_PATH = os.getenv("TASKS_DB_PATH", os.path.join(BASE_DIR, "tasks.db"))
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 MASTER_APP_PASSWORD = os.getenv("MASTER_APP_PASSWORD", "").strip()
 # TASK_BOT_TOKEN — токен бота для уведомлений о задачах (telegram-task-manager-bot)
