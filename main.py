@@ -242,10 +242,14 @@ async def daily_reminder_loop(app):
 from rich_bot import setup_rich_bot_application
 
 def run_rich_bot():
+    if not os.getenv("RICH_BOT_TOKEN", "").strip():
+        logger.info("RICH_BOT_TOKEN not set in Master Hub. Embedded Rich bot polling skipped (runs as standalone service).")
+        return
     try:
         rich_app = setup_rich_bot_application()
-        logger.info("Rich Hybrid Bot starting polling on token 8803642782...")
-        rich_app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
+        if rich_app:
+            logger.info("Rich Hybrid Bot starting polling...")
+            rich_app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
     except Exception as e:
         logger.error(f"Rich Hybrid Bot thread error: {e}")
 
