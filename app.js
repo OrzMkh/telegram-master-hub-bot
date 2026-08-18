@@ -1099,10 +1099,10 @@ function renderTasksList() {
 
     // Apply task status filtering
     const filter = window.currentTaskFilter || "all";
-    if (filter === "active") tasks = tasks.filter(t => t.status !== "Done" && !t.is_disputed && t.status !== "Disputed" && (!t.final_rating || Number(t.final_rating) === 0));
-    if (filter === "done") tasks = tasks.filter(t => (t.status === "Done" || (t.final_rating && Number(t.final_rating) > 0)) && !t.is_disputed && t.status !== "Disputed");
+    if (filter === "active") tasks = tasks.filter(t => t.status !== "Done" && !t.is_disputed && t.status !== "Disputed");
+    if (filter === "done") tasks = tasks.filter(t => t.status === "Done" && !t.is_disputed && t.status !== "Disputed");
     if (filter === "unrated") tasks = tasks.filter(t => (t.status === "Done" || t.status === "Active") && (!t.rating || Number(t.rating) === 0) && (!t.final_rating || Number(t.final_rating) === 0) && !t.is_disputed && t.status !== "Disputed");
-    if (filter === "disputed") tasks = tasks.filter(t => (t.is_disputed === true || t.status === "Disputed" || (t.rating_comment && t.rating_comment.includes(":") && (!t.final_rating || Number(t.final_rating) === 0))) && (!t.final_rating || Number(t.final_rating) === 0));
+    if (filter === "disputed") tasks = tasks.filter(t => t.is_disputed === true || t.status === "Disputed");
     if (filter === "rated") tasks = tasks.filter(t => (Number(t.rating) > 0 || Number(t.final_rating) > 0) && !t.is_disputed && t.status !== "Disputed");
 
     const countBadge = document.getElementById("taskCountBadge");
@@ -1112,8 +1112,8 @@ function renderTasksList() {
         tasksList.innerHTML = `<div class="muted-text text-center" style="padding:24px; color:var(--text-muted); font-size:13px;">Задач не найдено</div>`;
     } else {
         tasksList.innerHTML = tasks.map(t => {
-            const hasFinalRating = (t.final_rating && Number(t.final_rating) > 0);
-            const isDisputed = (t.is_disputed === true || t.status === "Disputed" || (t.rating_comment && t.rating_comment.includes(":") && !hasFinalRating)) && !hasFinalRating;
+            const isDisputed = (t.is_disputed === true || t.status === "Disputed");
+            const hasFinalRating = !isDisputed && (t.final_rating && Number(t.final_rating) > 0);
             const isDone = t.status === "Done" || isDisputed || hasFinalRating;
             const statusClass = isDisputed ? "disputed" : (isDone ? "closed" : "active");
             const statusText = isDisputed ? "⚖️ Оспорена" : (isDone ? "Завершено" : "В работе");
