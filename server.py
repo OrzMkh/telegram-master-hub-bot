@@ -1086,10 +1086,10 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
         if not raw_rows:
             raw_rows = default_cities_fallback
 
-        # Live Google Sheets fallback for bike reports (with 15s in-memory cache to prevent 429 Quota Exceeded)
+        # Live Google Sheets fallback for bike reports (with 90s in-memory cache to prevent 429 Quota Exceeded)
         now_time = time.time()
         sheet_reports = {}
-        if now_time - BIKE_SHEETS_CACHE["timestamp"] < 15 and BIKE_SHEETS_CACHE["data"]:
+        if now_time - BIKE_SHEETS_CACHE["timestamp"] < 90 and BIKE_SHEETS_CACHE["data"]:
             sheet_reports = BIKE_SHEETS_CACHE["data"]
         else:
             try:
@@ -1811,35 +1811,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
 
         # 4. Background Google Sheets & SQLite update
         def _bg_update_sheets_db():
-            try:
-                client = get_google_sheets_client()
-                if client:
-                    spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
-                    sheet = spreadsheet.sheet1
-                    headers = [str(h).strip() for h in sheet.row_values(1)]
-                    id_col_vals = sheet.col_values(1)
-                    target_row = None
-                    for idx, val in enumerate(id_col_vals):
-                        if str(val).replace("#", "").strip() == str_id:
-                            target_row = idx + 1
-                            break
-                    if target_row:
-                        stat_col = headers.index("Статус") + 1 if "Статус" in headers else 7
-                        sheet.update_cell(target_row, stat_col, "Done")
-
-                        init_col = headers.index("Первоначальная оценка") + 1 if "Первоначальная оценка" in headers else 8
-                        final_col = headers.index("Итоговая оценка не меняется") + 1 if "Итоговая оценка не меняется" in headers else (headers.index("Последняя оценка") + 1 if "Последняя оценка" in headers else 10)
-
-                        row_vals = sheet.row_values(target_row)
-                        raw_init = row_vals[init_col - 1] if len(row_vals) >= init_col else "0"
-                        if not raw_init.strip() or raw_init.strip() == "0":
-                            sheet.update_cell(target_row, init_col, str(rating))
-                        sheet.update_cell(target_row, final_col, str(rating))
-
-                    TASKS_SHEETS_CACHE["timestamp"] = 0
-            except Exception as e:
-                logger.error(f"Failed to update task rating in Google Sheets: {e}")
-
+            # 1. Update SQLite immediately
             try:
                 if os.path.exists(TASKS_DB_PATH):
                     with sqlite3.connect(TASKS_DB_PATH) as conn:
@@ -1849,6 +1821,57 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
                         conn.commit()
             except Exception as e_sql:
                 logger.error(f"Failed to finalize task #{task_id} in SQLite: {e_sql}")
+
+            # 2. Optimistically update in-memory tasks cache so UI reflects change immediately
+            if TASKS_SHEETS_CACHE.get("data"):
+                for t in TASKS_SHEETS_CACHE["data"]:
+                    if str(t.get("id", "")).replace("#", "").strip() == str_id:
+                        t["status"] = "Done"
+                        t["rating"] = rating
+                        t["final_rating"] = rating
+                        t["is_disputed"] = False
+                        if not t.get("initial_rating"):
+                            t["initial_rating"] = rating
+
+            # 3. Update Google Sheets with retry on 429 rate limit
+            for attempt in range(3):
+                try:
+                    client = get_google_sheets_client()
+                    if client:
+                        spreadsheet = client.open_by_key("14lJVvDmK9LOAERAo9twp3Ak-FEdvlrzu-8FywP2dTn4")
+                        sheet = spreadsheet.sheet1
+                        rows = sheet.get_all_values()
+                        if not rows:
+                            break
+                        headers = [str(h).strip() for h in rows[0]]
+                        target_row = None
+                        for idx, r in enumerate(rows):
+                            if idx == 0:
+                                continue
+                            if len(r) > 0 and str(r[0]).replace("#", "").strip() == str_id:
+                                target_row = idx + 1
+                                break
+                        if target_row:
+                            stat_col = headers.index("Статус") + 1 if "Статус" in headers else 7
+                            init_col = headers.index("Первоначальная оценка") + 1 if "Первоначальная оценка" in headers else 8
+                            final_col = headers.index("Итоговая оценка не меняется") + 1 if "Итоговая оценка не меняется" in headers else (headers.index("Последняя оценка") + 1 if "Последняя оценка" in headers else 10)
+
+                            row_vals = rows[target_row - 1]
+                            raw_init = row_vals[init_col - 1] if len(row_vals) >= init_col else "0"
+
+                            sheet.update_cell(target_row, stat_col, "Done")
+                            if not raw_init.strip() or raw_init.strip() == "0":
+                                sheet.update_cell(target_row, init_col, str(rating))
+                            sheet.update_cell(target_row, final_col, str(rating))
+
+                        TASKS_SHEETS_CACHE["timestamp"] = 0
+                        break
+                except Exception as e:
+                    logger.error(f"Attempt {attempt+1}: Failed to update task rating in Google Sheets: {e}")
+                    if "429" in str(e) or "Quota" in str(e):
+                        time.sleep(2 * (attempt + 1))
+                    else:
+                        break
 
         threading.Thread(target=_bg_update_sheets_db, daemon=True).start()
         return tg_result
