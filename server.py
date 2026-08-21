@@ -1009,7 +1009,7 @@ class MasterHubHandler(SimpleHTTPRequestHandler):
             logger.error(f"Error reading Rich Bike sheet: {e}")
 
         on_line = in_trip if in_trip > 0 else issued
-        pct = min(100, round(((on_line + broken) / total_fleet) * 100)) if total_fleet > 0 else 0
+        pct = min(100, round((on_line / total_fleet) * 100)) if total_fleet > 0 else 0
 
         return {
             "total_rich_fleet": total_fleet,
